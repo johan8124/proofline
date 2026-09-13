@@ -1,0 +1,10 @@
+This file is intentionally NOT a structurally valid PDF.
+
+It is a synthetic fixture for Proofline's deterministic HUMAN REVIEW smoke
+test. The existing pipeline (inspectPdf -> verifyPdfAgainstPageLimit ->
+verifyPdfPageLimitWithEvidence -> readinessFindingFromEvidence ->
+buildReadinessResult) classifies an unparseable PDF as evidence
+'unsupported' (page count unknown), which the readiness layer promotes to a
+'needs_review' finding and therefore an overall 'human_review' status.
+
+No real manuscript content is required for this fixture.
