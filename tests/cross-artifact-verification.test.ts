@@ -109,6 +109,66 @@ const blockedLedger: EvidenceLedger = {
   ],
 };
 
+/**
+ * Ledger where BOTH required_repository_file_supplementary AND
+ * supplementary_results_artifact_figures_results fail. This represents the
+ * case where the repository is missing figures/results.pdf, and both the
+ * repository-side required-file rule AND the cross-artifact rule detect the
+ * same missing artifact. The readiness layer should deduplicate these into
+ * ONE blocking finding.
+ */
+const doubleBlockedLedger: EvidenceLedger = {
+  entries: [
+    EXAMPLE_PDF_PAGE_COUNT_PASS,
+    repositoryPassEvidence(
+      'ev-double-repo-accessible-pass',
+      'repository_accessible',
+      'repository_accessibility',
+      'verified',
+      "Repository accessibility reported as 'verified'.",
+    ),
+    repositoryPassEvidence(
+      'ev-double-repo-readme-pass',
+      'required_repository_file_readme',
+      'required_file:README.md',
+      'present',
+      "File 'README.md' reported with availability 'present'.",
+    ),
+    repositoryPassEvidence(
+      'ev-double-repo-license-pass',
+      'required_repository_file_license',
+      'required_file:LICENSE',
+      'present',
+      "File 'LICENSE' reported with availability 'present'.",
+    ),
+    // Both paired rules fail for the same missing artifact
+    {
+      ...EXAMPLE_SUPPLEMENTARY_ARTIFACT_CROSS_LINK,
+      evidenceId: 'ev-double-required-file-supplementary-fail',
+      ruleId: 'required_repository_file_supplementary',
+      checked: 'required_file:figures/results.pdf',
+      value: 'missing',
+      details:
+        "File 'figures/results.pdf' was not observed in the repository; " +
+        "required supplementary artifact is missing.",
+      status: 'fail',
+      recommendedAction: 'fix',
+    },
+    {
+      ...EXAMPLE_SUPPLEMENTARY_ARTIFACT_CROSS_LINK,
+      evidenceId: 'ev-double-supplementary-artifact-fail',
+      ruleId: 'supplementary_results_artifact_figures_results',
+      checked: 'supplementary_results_artifact_missing',
+      value: 'missing',
+      details:
+        "Repository artifact 'figures/results.pdf' was not observed; the " +
+        "manuscript-side required_file_supplementary requirement is unsatisfied.",
+      status: 'fail',
+      recommendedAction: 'fix',
+    },
+  ],
+};
+
 test('supplementary_results_artifact uses required-file presence semantics and links to required_file_supplementary', () => {
   assert.equal(EXAMPLE_SUPPLEMENTARY_RESULTS_ARTIFACT_RULE.type, 'supplementary_results_artifact');
   assert.equal(
@@ -160,6 +220,50 @@ test('BLOCKED: a missing supplementary results artifact blocks the submission', 
   const blocking = readiness.findings.find((finding) => finding.status === 'fail');
   assert.ok(blocking);
   assert.equal(blocking.ruleId, 'supplementary_results_artifact_figures_results');
+});
+
+test('BLOCKED: paired missing supplementary results artifact deduplicates to one blocking finding', () => {
+  // Both required_repository_file_supplementary AND
+  // supplementary_results_artifact_figures_results fail for the same
+  // missing artifact (figures/results.pdf). The readiness layer must
+  // deduplicate these into ONE blocking finding while preserving both
+  // evidence entries in the ledger.
+  const findings = doubleBlockedLedger.entries.map((entry) =>
+    readinessFindingFromEvidence(entry),
+  );
+  const readiness = buildReadinessResult(findings, doubleBlockedLedger);
+
+  // Overall status is still blocked
+  assert.equal(readiness.status, 'blocked');
+
+  // 4 passing findings: PDF page count, repo accessible, readme, license
+  assert.equal(readiness.passedCount, 4);
+
+  // DEDUPLICATION: 2 failing rules produce ONE blocking finding
+  assert.equal(readiness.blockingCount, 1);
+
+  // No human review findings
+  assert.equal(readiness.humanReviewCount, 0);
+
+  // Evidence ledger still contains BOTH failing entries (not mutated)
+  assert.equal(doubleBlockedLedger.entries.length, 6);
+
+  // Findings array contains EXACTLY ONE failing finding after deduplication
+  const failingFindings = readiness.findings.filter((f) => f.status === 'fail');
+  assert.equal(failingFindings.length, 1, 'should have exactly one fail finding after deduplication');
+
+  // The surviving finding is the cross-artifact rule (more context)
+  const survivingFinding = failingFindings[0];
+  assert.equal(
+    survivingFinding.ruleId,
+    'supplementary_results_artifact_figures_results',
+    'surviving finding should be the cross-artifact rule',
+  );
+  assert.equal(
+    survivingFinding.sourceRef,
+    'figures/results.pdf',
+    'surviving finding should reference figures/results.pdf',
+  );
 });
 
 test('Strands inspect_repository observes the cross-artifact relationship', async () => {

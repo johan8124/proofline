@@ -1,8 +1,68 @@
 @import "tailwindcss";
 
+/* ---------------------------------------------------------------------------
+   Proofline design tokens.
+   Light/dark surfaces and status accents drive the bespoke result-experience
+   components (readiness banner, evidence ledger, cross-artifact chain).
+   Tailwind's zinc utilities still handle most everyday surfaces.
+--------------------------------------------------------------------------- */
+
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #18181b;
+
+  --pf-surface: #ffffff;
+  --pf-surface-muted: #fafafa;
+  --pf-border: #e4e4e7;
+  --pf-border-strong: #d4d4d8;
+  --pf-text-secondary: #52525b;
+  --pf-text-muted: #71717a;
+  --pf-text-faint: #a1a1aa;
+
+  --pf-ready: #059669;
+  --pf-ready-ink: #064e3b;
+  --pf-ready-tint: #ecfdf5;
+  --pf-ready-border: #a7f3d0;
+
+  --pf-blocked: #dc2626;
+  --pf-blocked-ink: #7f1d1d;
+  --pf-blocked-tint: #fef2f2;
+  --pf-blocked-border: #fecaca;
+
+  --pf-review: #d97706;
+  --pf-review-ink: #78350f;
+  --pf-review-tint: #fffbeb;
+  --pf-review-border: #fde68a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #09090b;
+    --foreground: #f4f4f5;
+
+    --pf-surface: #111113;
+    --pf-surface-muted: #0c0c0e;
+    --pf-border: #26262b;
+    --pf-border-strong: #3f3f46;
+    --pf-text-secondary: #d4d4d8;
+    --pf-text-muted: #a1a1aa;
+    --pf-text-faint: #71717a;
+
+    --pf-ready: #34d399;
+    --pf-ready-ink: #a7f3d0;
+    --pf-ready-tint: rgba(16, 185, 129, 0.08);
+    --pf-ready-border: rgba(16, 185, 129, 0.35);
+
+    --pf-blocked: #f87171;
+    --pf-blocked-ink: #fecaca;
+    --pf-blocked-tint: rgba(239, 68, 68, 0.08);
+    --pf-blocked-border: rgba(239, 68, 68, 0.35);
+
+    --pf-review: #fbbf24;
+    --pf-review-ink: #fde68a;
+    --pf-review-tint: rgba(245, 158, 11, 0.08);
+    --pf-review-border: rgba(245, 158, 11, 0.35);
+  }
 }
 
 @theme inline {
@@ -12,15 +72,465 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-feature-settings: "ss01", "cv11";
+  text-rendering: optimizeLegibility;
+}
+
+/* ===========================================================================
+   Result experience
+   ========================================================================== */
+
+/* Small uppercase kicker used across result sections. */
+.pf-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--pf-text-muted);
+}
+
+/* Generic quiet result panel (one surface, no card-in-card nesting). */
+.pf-panel {
+  border-radius: 14px;
+  border: 1px solid var(--pf-border);
+  background: var(--pf-surface);
+}
+
+.pf-panel-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px;
+}
+
+.pf-panel-body {
+  padding: 20px;
+}
+
+/* -- Readiness banner (strongest visual element) ------------------------- */
+
+.pl-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border-radius: 16px;
+  border: 1px solid var(--pf-border);
+  padding: 24px;
+}
+
+@media (min-width: 640px) {
+  .pl-banner {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 18px;
+    padding: 28px;
+  }
+}
+
+.pl-banner-ready {
+  background: var(--pf-ready-tint);
+  border-color: var(--pf-ready-border);
+  color: var(--pf-ready-ink);
+}
+
+.pl-banner-blocked {
+  background: var(--pf-blocked-tint);
+  border-color: var(--pf-blocked-border);
+  color: var(--pf-blocked-ink);
+}
+
+.pl-banner-human_review {
+  background: var(--pf-review-tint);
+  border-color: var(--pf-review-border);
+  color: var(--pf-review-ink);
+}
+
+.pl-banner-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
+}
+
+.pl-banner-content {
+  min-width: 0;
+  flex: 1;
+}
+
+.pl-banner .pf-eyebrow {
+  color: color-mix(in srgb, currentColor 72%, transparent);
+}
+
+.pl-banner-title {
+  margin-top: 2px;
+  font-size: 2rem;
+  line-height: 1.08;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+@media (min-width: 640px) {
+  .pl-banner-title {
+    font-size: 2.25rem;
+  }
+}
+
+.pl-banner-copy {
+  margin-top: 10px;
+  max-width: 58ch;
+  font-size: 14px;
+  line-height: 1.6;
+  color: color-mix(in srgb, currentColor 84%, transparent);
+}
+
+/* -- Result summary strip ------------------------------------------------ */
+
+.pl-stat {
+  border: 1px solid var(--pf-border);
+  border-radius: 12px;
+  background: var(--pf-surface);
+  padding: 14px 16px;
+}
+
+.pl-stat-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pf-text-faint);
+}
+
+.pl-stat-value {
+  margin-top: 6px;
+  font-size: 22px;
+  line-height: 1.1;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+}
+
+.pl-stat-sub {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--pf-text-muted);
+}
+
+.pl-stat--blocked .pl-stat-value {
+  color: var(--pf-blocked);
+}
+
+.pl-stat--review .pl-stat-value {
+  color: var(--pf-review);
+}
+
+.pl-count {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  border: 1px solid var(--pf-border);
+  border-radius: 9999px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pf-text-muted);
+  background: var(--pf-surface-muted);
+}
+
+.pl-count--blocked {
+  color: var(--pf-blocked);
+  border-color: color-mix(in srgb, var(--pf-blocked) 30%, transparent);
+  background: color-mix(in srgb, var(--pf-blocked) 8%, transparent);
+}
+
+.pl-count--review {
+  color: var(--pf-review);
+  border-color: color-mix(in srgb, var(--pf-review) 30%, transparent);
+  background: color-mix(in srgb, var(--pf-review) 8%, transparent);
+}
+
+/* -- Blocking / review finding lists ------------------------------------- */
+
+.pl-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pl-list-item {
+  padding: 18px 20px;
+  border-top: 1px solid var(--pf-border);
+}
+
+.pl-list-item:first-child {
+  border-top: none;
+}
+
+.pl-index {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border-radius: 9999px;
+  border: 1px solid var(--pf-border);
+  background: var(--pf-surface-muted);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--pf-text-muted);
+}
+
+.pl-remediation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--pf-border);
+  padding: 9px 12px;
+}
+
+.pl-remediation[data-tone="blocked"] {
+  border-color: color-mix(in srgb, var(--pf-blocked) 25%, transparent);
+  background: color-mix(in srgb, var(--pf-blocked) 6%, transparent);
+}
+
+.pl-remediation[data-tone="review"] {
+  border-color: color-mix(in srgb, var(--pf-review) 25%, transparent);
+  background: color-mix(in srgb, var(--pf-review) 6%, transparent);
+}
+
+.pl-remediation-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--pf-text-muted);
+}
+
+.pl-remediation-text {
+  font-size: 13px;
+  color: var(--foreground);
+}
+
+/* -- Investigation -------------------------------------------------------- */
+
+.pl-investigation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.pl-investigation-cell {
+  padding: 16px 20px;
+}
+
+@media (min-width: 768px) {
+  .pl-investigation-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .pl-investigation-cell {
+    padding: 18px 24px;
+  }
+
+  .pl-investigation-cell + .pl-investigation-cell {
+    border-left: 1px solid var(--pf-border);
+  }
+}
+
+.pl-investigation-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pf-text-faint);
+}
+
+.pl-investigation-value {
+  margin-top: 5px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--foreground);
+  word-break: break-word;
+}
+
+.pl-investigation-sub {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--pf-text-muted);
+  word-break: break-word;
+}
+
+/* -- Evidence Ledger ------------------------------------------------------ */
+
+.pl-ledger-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pl-ledger-record {
+  padding: 18px 20px;
+  border-top: 1px solid var(--pf-border);
+}
+
+.pl-ledger-record:first-child {
+  border-top: none;
+}
+
+.pl-ledger-record-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 14px;
+}
+
+.pl-ledger-fields {
+  display: grid;
+  gap: 14px;
+}
+
+@media (min-width: 768px) {
+  .pl-ledger-fields {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    column-gap: 28px;
+    row-gap: 14px;
+  }
+
+  .pl-ledger-field--span {
+    grid-column: 1 / -1;
+  }
+}
+
+.pl-ledger-field dt {
+  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pf-text-faint);
+}
+
+.pl-ledger-field dd {
+  color: var(--foreground);
+}
+
+/* -- Cross-artifact chain ------------------------------------------------ */
+
+.pl-chain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 8px 6px;
+}
+
+.pl-chain-step {
+  flex: 1 1 138px;
+  min-width: 0;
+  border: 1px solid var(--pf-border);
+  border-radius: 10px;
+  background: var(--pf-surface-muted);
+  padding: 10px 12px;
+}
+
+.pl-chain-step-key {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--pf-text-faint);
+}
+
+.pl-chain-step-value {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo,
+    Consolas, monospace;
+  word-break: break-word;
+  color: var(--foreground);
+}
+
+.pl-chain-step-note {
+  display: block;
+  margin-top: 3px;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--pf-text-muted);
+  word-break: break-word;
+}
+
+.pl-chain-arrow {
+  align-self: center;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--pf-text-faint);
+}
+
+/* Decision step inherits the entry status accent. */
+.pl-chain-pass .pl-chain-step:last-child {
+  border-color: color-mix(in srgb, var(--pf-ready) 40%, transparent);
+  background: var(--pf-ready-tint);
+}
+
+.pl-chain-pass .pl-chain-step:last-child .pl-chain-step-value {
+  color: var(--pf-ready);
+}
+
+.pl-chain-fail .pl-chain-step:last-child {
+  border-color: color-mix(in srgb, var(--pf-blocked) 40%, transparent);
+  background: var(--pf-blocked-tint);
+}
+
+.pl-chain-fail .pl-chain-step:last-child .pl-chain-step-value {
+  color: var(--pf-blocked);
+}
+
+.pl-chain-needs_review .pl-chain-step:last-child,
+.pl-chain-unsupported .pl-chain-step:last-child {
+  border-color: color-mix(in srgb, var(--pf-review) 40%, transparent);
+  background: var(--pf-review-tint);
+}
+
+.pl-chain-needs_review .pl-chain-step:last-child .pl-chain-step-value,
+.pl-chain-unsupported .pl-chain-step:last-child .pl-chain-step-value {
+  color: var(--pf-review);
+}
+
+/* -- Agent explanation (visually secondary) ------------------------------- */
+
+.pl-agent-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pf-text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

@@ -104,16 +104,55 @@ export interface ReadinessResult {
  * Counts (`blockingCount` / `humanReviewCount` / `passedCount`) are derived
  * from the supplied findings. The supplied evidence ledger is returned as-is;
  * it is never mutated.
+ *
+ * DEDUPLICATION: When both 'required_repository_file_supplementary' and
+ * 'supplementary_results_artifact_figures_results' fail together, they
+ * represent the SAME underlying missing artifact (figures/results.pdf). In
+ * this case, the readiness findings array contains ONE blocking finding for
+ * this issue (the cross-artifact rule finding, which provides richer context),
+ * and blockingCount is 1. Both evidence entries remain in the ledger
+ * unchanged. This rule is intentionally narrow and does NOT apply to other
+ * rule pairs.
  */
 export function buildReadinessResult(
   findings: readonly ReadinessFinding[],
   evidenceLedger: EvidenceLedger,
 ): ReadinessResult {
-  const blockingCount = findings.filter((finding) => finding.status === 'fail').length;
-  const humanReviewCount = findings.filter(
+  // Identify findings that fail for the specific paired case:
+  // required_repository_file_supplementary + supplementary_results_artifact_figures_results
+  // Both verify the same repository artifact (figures/results.pdf), so when both
+  // fail they represent ONE underlying issue, not two.
+  const hasRequiredSupplementaryFileFail = findings.some(
+    (f) => f.status === 'fail' && f.ruleId === 'required_repository_file_supplementary',
+  );
+  const hasSupplementaryResultsArtifactFail = findings.some(
+    (f) => f.status === 'fail' && f.ruleId === 'supplementary_results_artifact_figures_results',
+  );
+
+  // Deduplicate the paired case: if both rules fail, keep only the
+  // cross-artifact finding (more context about the manuscript relationship)
+  // and drop the required_repository_file_supplementary finding from the
+  // readiness findings array. Both evidence entries remain in the ledger.
+  const pairedBothFail =
+    hasRequiredSupplementaryFileFail && hasSupplementaryResultsArtifactFail;
+
+  let deduplicatedFindings: readonly ReadinessFinding[];
+  if (pairedBothFail) {
+    // Keep all findings except the duplicate required_repository_file_supplementary fail
+    deduplicatedFindings = findings.filter(
+      (f) =>
+        !(f.status === 'fail' && f.ruleId === 'required_repository_file_supplementary'),
+    );
+  } else {
+    deduplicatedFindings = findings;
+  }
+
+  // Count blocking findings from the deduplicated array
+  const blockingCount = deduplicatedFindings.filter((finding) => finding.status === 'fail').length;
+  const humanReviewCount = deduplicatedFindings.filter(
     (finding) => finding.status === 'unsupported' || finding.status === 'needs_review',
   ).length;
-  const passedCount = findings.filter((finding) => finding.status === 'pass').length;
+  const passedCount = deduplicatedFindings.filter((finding) => finding.status === 'pass').length;
 
   const status: ReadinessStatus =
     blockingCount > 0

@@ -12,6 +12,7 @@
 
 import { useState } from 'react';
 import type { ChangeEvent, ReactNode } from 'react';
+import { AgentMarkdown } from './components/agent-markdown';
 
 /** Readiness status returned by POST /api/preflight. */
 type ReadinessStatus = 'ready' | 'blocked' | 'human_review';
@@ -37,6 +38,14 @@ interface PreflightEvidenceEntry {
   value: string;
   status: string;
   timestamp: string;
+  /** What was checked (e.g. 'page_count'). */
+  checked: string;
+  /** Reference to the concrete evidence source. */
+  sourceRef: string;
+  /** Longer detail text about the observation. */
+  details: string;
+  /** Recommended follow-up action code. */
+  recommendedAction: string;
 }
 
 /** Structured preflight result stored in client state after a run. */
@@ -86,8 +95,7 @@ function optionalString(value: unknown): string | undefined {
  */
 function parsePreflightResult(body: unknown): PreflightResult | null {
   if (!isRecord(body)) return null;
-  const { readiness, findings, evidenceLedger, pdfVerified, repositoryVerified, repositorySource } =
-    body;
+  const { readiness, evidenceLedger, pdfVerified, repositoryVerified, repositorySource } = body;
   if (!isRecord(readiness) || typeof readiness.status !== 'string') return null;
   if (
     readiness.status !== 'ready' &&
@@ -96,7 +104,11 @@ function parsePreflightResult(body: unknown): PreflightResult | null {
   ) {
     return null;
   }
-  if (!Array.isArray(findings) || !isRecord(evidenceLedger)) return null;
+  // Use the authoritative readiness.findings array directly. This ensures all
+  // UI sections consume the same deduplicated findings that the result summary
+  // and agent facts use.
+  const readinessFindings = readiness.findings;
+  if (!Array.isArray(readinessFindings) || !isRecord(evidenceLedger)) return null;
   if (!Array.isArray(evidenceLedger.entries)) return null;
   if (typeof pdfVerified !== 'boolean' || typeof repositoryVerified !== 'boolean') return null;
   if (
@@ -108,7 +120,7 @@ function parsePreflightResult(body: unknown): PreflightResult | null {
   }
 
   const parsedFindings: PreflightFinding[] = [];
-  for (const item of findings) {
+  for (const item of readinessFindings) {
     if (!isRecord(item)) return null;
     const findingId = optionalString(item.findingId);
     const ruleId = optionalString(item.ruleId);
@@ -158,7 +170,18 @@ function parsePreflightResult(body: unknown): PreflightResult | null {
     ) {
       return null;
     }
-    parsedEntries.push({ evidenceId, ruleId, sourceType, value, status, timestamp });
+    parsedEntries.push({
+      evidenceId,
+      ruleId,
+      sourceType,
+      value,
+      status,
+      timestamp,
+      checked: optionalString(item.checked) ?? '',
+      sourceRef: optionalString(item.sourceRef) ?? '',
+      details: optionalString(item.details) ?? '',
+      recommendedAction: optionalString(item.recommendedAction) ?? '',
+    });
   }
 
   const passedCount = typeof readiness.passedCount === 'number' ? readiness.passedCount : 0;
@@ -264,26 +287,6 @@ function parseAgentSections(agentText: string): AgentSection[] {
   return ordered;
 }
 
-/** Renders one agent section body as readable plain paragraphs. */
-function AgentSectionBody({ body }: { body: string }) {
-  const paragraphs = body
-    .split(/\n{2,}/)
-    .map((paragraph) => paragraph.trim())
-    .filter((paragraph) => paragraph.length > 0);
-  if (paragraphs.length === 0) {
-    return null;
-  }
-  return (
-    <div className="mt-1 grid gap-2">
-      {paragraphs.map((paragraph, index) => (
-        <p key={index} className="whitespace-pre-wrap text-sm leading-6 text-zinc-700 dark:text-zinc-300">
-          {paragraph}
-        </p>
-      ))}
-    </div>
-  );
-}
-
 /** Card shell with a bordered heading. */
 function Card({
   title,
@@ -303,6 +306,533 @@ function Card({
     </section>
   );
 }
+
+/* --------------------------------------------------------------------------- */
+/* Result experience — submission-preflight presentation                       */
+/* --------------------------------------------------------------------------- */
+
+/** Human label for a recommended-action code. */
+function recommendedActionText(action: string): string {
+  switch (action) {
+    case 'fix':
+      return 'Fix — resolve the issue before submitting.';
+    case 'verify':
+      return 'Verify — confirm the requirement manually, then re-run preflight.';
+    case 'human_review':
+      return 'Human review — a person must confirm before submission.';
+    case 'none':
+      return 'No action required.';
+    default:
+      return 'Review manually before submitting.';
+  }
+}
+
+/** Short human label for an evidence source type. */
+function sourceTypeLabel(sourceType: string): string {
+  switch (sourceType) {
+    case 'pdf':
+      return 'Manuscript PDF';
+    case 'repository':
+      return 'Repository';
+    case 'url':
+      return 'URL';
+    case 'file':
+      return 'File';
+    case 'manual':
+      return 'Manual';
+    default:
+      return sourceType;
+  }
+}
+
+/** Concise repository summary for the result summary strip. */
+function repositorySourceText(result: PreflightResult): string {
+  if (result.repositorySource === 'github') return 'GitHub';
+  if (result.repositorySource === 'local') return 'Local';
+  return 'None';
+}
+
+function repositorySourceSubline(result: PreflightResult): string {
+  if (result.repositorySource === 'github') return 'public repo fetched & inspected';
+  if (result.repositorySource === 'local') return 'directory inspected';
+  return 'not supplied';
+}
+
+/** Compact deterministic timestamp for the ledger (e.g. 2026-09-13 00:00:01 UTC). */
+function formatTimestamp(timestamp: string): string {
+  const value = timestamp ?? '';
+  const normalized = value.replace('T', ' ').replace(/Z$/i, ' UTC');
+  return normalized.length > 0 ? normalized : value;
+}
+
+/** Observed availability, expressed for the cross-artifact chain. */
+function availabilityLabel(value: string): string {
+  switch (value) {
+    case 'present':
+      return 'Verified present';
+    case 'missing':
+    case 'not_listed':
+      return 'Missing';
+    case 'unknown':
+      return 'Not determined';
+    default:
+      return value;
+  }
+}
+
+/** Decision label derived from the entry status. */
+function resultingDecisionText(status: string): string {
+  if (status === 'pass') return 'Requirement satisfied';
+  if (status === 'fail') return 'Submission blocked';
+  return 'Needs human review';
+}
+
+/** Parsed cross-artifact relationship from one ledger entry. */
+interface CrossArtifactRelation {
+  isCrossArtifact: boolean;
+  manuscriptRuleId: string;
+  manuscriptRequirement: string;
+  artifactPath: string;
+  availability: string;
+}
+
+/**
+ * Recognizes the supplementary-results cross-artifact entry and extracts the
+ * relationship chain it records. Supports both ledger shapes: entries whose
+ * details explicitly name the linked manuscript-side rule, and entries from
+ * the live repository pipeline (details carry the required path and the
+ * observed availability). The linked manuscript rule for
+ * `supplementary_results_artifact_*` entries is defined by the example venue
+ * rule set (`required_file_supplementary`) and is used here only as display
+ * fallback metadata — it never influences verification state.
+ */
+function crossArtifactInfo(entry: PreflightEvidenceEntry): CrossArtifactRelation {
+  const details = entry.details || '';
+  const manuscriptRuleMatch =
+    /satisfies manuscript-side venue rule '([^']+)' \(([^)]+)\)\./.exec(details);
+  const artifactPathMatch =
+    /Repository artifact '([^']+)'/.exec(details) ??
+    /Required repository file path '([^']+)'/.exec(details);
+  const availabilityMatch = /availability '([^']+)'/.exec(details);
+  const isCrossArtifact =
+    entry.ruleId.startsWith('supplementary_results_artifact') || manuscriptRuleMatch !== null;
+  return {
+    isCrossArtifact,
+    manuscriptRuleId:
+      manuscriptRuleMatch?.[1] ?? 'required_file_supplementary',
+    manuscriptRequirement:
+      manuscriptRuleMatch?.[2] ?? 'The submission must include supplementary.pdf.',
+    artifactPath: artifactPathMatch?.[1] ?? entry.sourceRef ?? '',
+    availability: availabilityMatch?.[1] ?? entry.value ?? '',
+  };
+}
+
+/** Minimal status glyph for the readiness banner (inline SVG, no deps). */
+function ReadinessGlyph({ status }: { status: ReadinessStatus }) {
+  if (status === 'ready') {
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2}
+        aria-hidden="true"
+        className="h-6 w-6"
+      >
+        <circle cx="12" cy="12" r="9" strokeOpacity={0.3} />
+        <path d="M8.25 12.25l2.5 2.5 5-5.5" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (status === 'blocked') {
+    return (
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2}
+        aria-hidden="true"
+        className="h-6 w-6"
+      >
+        <circle cx="12" cy="12" r="9" strokeOpacity={0.3} />
+        <path d="M9.25 9.25l5.5 5.5M14.75 9.25l-5.5 5.5" strokeLinecap="round" />
+      </svg>
+    );
+  }
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      aria-hidden="true"
+      className="h-6 w-6"
+    >
+      <path d="M12 5L20.5 19.5h-17L12 5z" strokeLinejoin="round" />
+      <path d="M12 10.5v4" strokeLinecap="round" />
+      <circle cx="12" cy="17.25" r="0.5" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** Dominant readiness state banner — the strongest element of the result. */
+function ReadinessBanner({ result }: { result: PreflightResult }) {
+  const status = result.status;
+  const copy =
+    status === 'ready'
+      ? `Proofline deterministically verified every check in this submission against explicit venue rules. ${result.passedCount} ${result.passedCount === 1 ? 'check' : 'checks'} proven by recorded evidence — no guesswork, no model judgment.`
+      : status === 'blocked'
+        ? `Proofline found this submission is not ready. ${result.blockingCount} blocking ${result.blockingCount === 1 ? 'issue' : 'issues'} must be resolved before submission — the most important one is listed first below.`
+        : `Proofline could not safely establish whether this submission is ready. ${result.humanReviewCount} ${result.humanReviewCount === 1 ? 'item' : 'items'} could not be verified deterministically and need a person to review.`;
+
+  return (
+    <section className={`pl-banner pl-banner-${status}`} aria-live="polite">
+      <div className="pl-banner-icon">
+        <ReadinessGlyph status={status} />
+      </div>
+      <div className="pl-banner-content">
+        <p className="pf-eyebrow">Submission readiness</p>
+        <h3 className="pl-banner-title">{readinessLabel(status)}</h3>
+        <p className="pl-banner-copy">{copy}</p>
+      </div>
+    </section>
+  );
+}
+
+/** Four-figure summary of the completed run. */
+function ResultSummary({ result }: { result: PreflightResult }) {
+  const stats: Array<{
+    label: string;
+    value: string;
+    sub: string;
+    tone: 'neutral' | 'blocked' | 'review';
+  }> = [
+    {
+      label: 'Checks proven',
+      value: String(result.passedCount),
+      sub: 'deterministic verification',
+      tone: 'neutral',
+    },
+    {
+      label: 'Blocking issues',
+      value: String(result.blockingCount),
+      sub: 'must be resolved',
+      tone: result.blockingCount > 0 ? 'blocked' : 'neutral',
+    },
+    {
+      label: 'Human review',
+      value: String(result.humanReviewCount),
+      sub: result.humanReviewCount === 1 ? 'needs a person' : 'need a person',
+      tone: result.humanReviewCount > 0 ? 'review' : 'neutral',
+    },
+    {
+      label: 'Repository',
+      value: repositorySourceText(result),
+      sub: repositorySourceSubline(result),
+      tone: 'neutral',
+    },
+  ];
+
+  const statToneClass = (tone: 'neutral' | 'blocked' | 'review'): string => {
+    if (tone === 'blocked') return ' pl-stat--blocked';
+    if (tone === 'review') return ' pl-stat--review';
+    return '';
+  };
+
+  return (
+    <dl className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      {stats.map((stat) => (
+        <div key={stat.label} className={`pl-stat${statToneClass(stat.tone)}`}>
+          <dt className="pl-stat-label">{stat.label}</dt>
+          <dd className="pl-stat-value">{stat.value}</dd>
+          <dd className="pl-stat-sub">{stat.sub}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** One blocking / review finding with its remediation. */
+function FindingItem({
+  finding,
+  index,
+  tone,
+}: {
+  finding: PreflightFinding;
+  index: number;
+  tone: 'blocked' | 'review';
+}) {
+  return (
+    <li className="pl-list-item">
+      <div className="flex items-start gap-3">
+        <span className="pl-index">{index + 1}</span>
+        <div className="min-w-0 flex-1">
+          <h4 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+            {finding.title}
+          </h4>
+          <p className="mt-0.5 font-mono text-[11px] text-zinc-500 dark:text-zinc-400">
+            {finding.ruleId}
+          </p>
+        </div>
+        <StatusBadge label={finding.status.toUpperCase()} tone={finding.status} />
+      </div>
+      <p className="mt-3 text-sm leading-6 text-zinc-600 dark:text-zinc-400">{finding.reason}</p>
+      <div className="pl-remediation mt-3" data-tone={tone}>
+        <span className="pl-remediation-label">Recommended action</span>
+        <span className="pl-remediation-text">{recommendedActionText(finding.recommendedAction)}</span>
+      </div>
+    </li>
+  );
+}
+
+/** Blocking issues — immediately visible, first item is most important. */
+function BlockingIssues({ result }: { result: PreflightResult }) {
+  const blockers = result.findings.filter((finding) => finding.status === 'fail');
+  if (blockers.length === 0) return null;
+  return (
+    <section className="pf-panel" aria-labelledby="blocking-heading">
+      <div className="pf-panel-header">
+        <div>
+          <p className="pf-eyebrow">Must resolve before submission</p>
+          <h3
+            id="blocking-heading"
+            className="mt-1 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50"
+          >
+            Blocking issues
+          </h3>
+        </div>
+        <span className="pl-count pl-count--blocked">
+          {blockers.length} {blockers.length === 1 ? 'issue' : 'issues'}
+        </span>
+      </div>
+      <ol className="pl-list">
+        {blockers.map((finding, index) => (
+          <FindingItem key={finding.findingId} finding={finding} index={index} tone="blocked" />
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+/** Human-review items — visually distinct from blocking issues. */
+function ReviewItems({ result }: { result: PreflightResult }) {
+  const items = result.findings.filter(
+    (finding) => finding.status === 'needs_review' || finding.status === 'unsupported',
+  );
+  if (items.length === 0) return null;
+  return (
+    <section className="pf-panel" aria-labelledby="review-heading">
+      <div className="pf-panel-header">
+        <div>
+          <p className="pf-eyebrow">Proofline could not fully verify</p>
+          <h3
+            id="review-heading"
+            className="mt-1 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50"
+          >
+            Items requiring human review
+          </h3>
+        </div>
+        <span className="pl-count pl-count--review">
+          {items.length} {items.length === 1 ? 'item' : 'items'}
+        </span>
+      </div>
+      <ol className="pl-list">
+        {items.map((finding, index) => (
+          <FindingItem key={finding.findingId} finding={finding} index={index} tone="review" />
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+/** Quiet summary of what Proofline inspected during this run. */
+function Investigation({ result }: { result: PreflightResult }) {
+  const ruleCount = new Set(result.findings.map((finding) => finding.ruleId)).size;
+  const pdfEntry = result.entries.find((entry) => entry.sourceType === 'pdf');
+  const repoEntry = result.entries.find((entry) => entry.sourceType === 'repository');
+  const manuscriptRef = pdfEntry?.sourceRef || 'manuscript.pdf';
+  const manuscriptNote = pdfEntry
+    ? pdfEntry.value === 'unknown'
+      ? 'page count could not be read'
+      : `page count ${pdfEntry.value}`
+    : '';
+
+  const cells = [
+    {
+      label: 'Manuscript inspected',
+      value: 'manuscript.pdf',
+      sub: manuscriptRef !== 'manuscript.pdf' ? manuscriptRef : manuscriptNote,
+    },
+    {
+      label: 'Repository inspected',
+      value: repositorySourceText(result),
+      sub:
+        result.repositorySource === 'none'
+          ? 'not supplied'
+          : repoEntry?.sourceRef || 'inspected',
+    },
+    {
+      label: 'Rules checked',
+      value: String(ruleCount),
+      sub: 'explicit venue + repository rules',
+    },
+    {
+      label: 'Deterministic verification',
+      value: 'Completed',
+      sub: `${result.entries.length} evidence ${result.entries.length === 1 ? 'record' : 'records'}`,
+    },
+  ];
+
+  return (
+    <section className="pf-panel" aria-labelledby="investigation-heading">
+      <div className="pf-panel-header">
+        <div>
+          <p className="pf-eyebrow">What Proofline inspected</p>
+          <h3
+            id="investigation-heading"
+            className="mt-1 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50"
+          >
+            Investigation
+          </h3>
+        </div>
+      </div>
+      <dl className="pl-investigation-grid">
+        {cells.map((cell) => (
+          <div key={cell.label} className="pl-investigation-cell">
+            <dt className="pl-investigation-label">{cell.label}</dt>
+            <dd className="pl-investigation-value">{cell.value}</dd>
+            <dd className="pl-investigation-sub">{cell.sub}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
+}
+
+/** One evidence ledger row — claim, evidence, rule, and resulting status.
+ *  Uses the deterministic helpers to render each claim as a trust surface
+ *  record with an optional cross-artifact chain. */
+function LedgerEntry({ entry }: { entry: PreflightEvidenceEntry }) {
+  const crossInfo = crossArtifactInfo(entry);
+  const decision = resultingDecisionText(entry.status);
+
+  return (
+    <li className="pl-ledger-record">
+      <div className="pl-ledger-record-top">
+        <span className="font-mono text-[11px] font-medium text-zinc-700 dark:text-zinc-300">
+          {entry.evidenceId}
+        </span>
+        <span className="font-mono text-[11px] text-zinc-500 dark:text-zinc-400">
+          {sourceTypeLabel(entry.sourceType)}
+        </span>
+        <StatusBadge label={entry.status.toUpperCase()} tone={entry.status} />
+      </div>
+
+      <dl className="pl-ledger-fields">
+        <div className="pl-ledger-field">
+          <dt>Rule</dt>
+          <dd className="font-mono text-xs text-zinc-600 dark:text-zinc-400">
+            {entry.ruleId}
+          </dd>
+        </div>
+        <div className="pl-ledger-field">
+          <dt>Checked</dt>
+          <dd>{entry.checked}</dd>
+        </div>
+        <div className="pl-ledger-field pl-ledger-field--span">
+          <dt>Value</dt>
+          <dd>{entry.value}</dd>
+        </div>
+        <div className="pl-ledger-field">
+          <dt>Decision</dt>
+          <dd>{decision}</dd>
+        </div>
+        <div className="pl-ledger-field">
+          <dt>Recorded</dt>
+          <dd>{formatTimestamp(entry.timestamp)}</dd>
+        </div>
+        <div className="pl-ledger-field">
+          <dt>Reference</dt>
+          <dd>{entry.sourceRef || '—'}</dd>
+        </div>
+      </dl>
+
+      {entry.details && (
+        <p className="mt-3 text-xs leading-5 text-zinc-600 dark:text-zinc-400">
+          {entry.details}
+        </p>
+      )}
+
+      {crossInfo.isCrossArtifact && (
+        <div className={`mt-3 pl-chain pl-chain-${entry.status}`}>
+          <span className="pl-chain-step">
+            <span className="pl-chain-step-key">Manuscript rule</span>
+            <span className="pl-chain-step-value">{crossInfo.manuscriptRuleId}</span>
+            <span className="pl-chain-step-note">
+              {crossInfo.manuscriptRequirement}
+            </span>
+          </span>
+          <span className="pl-chain-arrow">→</span>
+          <span className="pl-chain-step">
+            <span className="pl-chain-step-key">Artifact path</span>
+            <span className="pl-chain-step-value">{crossInfo.artifactPath}</span>
+          </span>
+          <span className="pl-chain-arrow">→</span>
+          <span className="pl-chain-step">
+            <span className="pl-chain-step-key">Availability</span>
+            <span className="pl-chain-step-value">
+              {availabilityLabel(crossInfo.availability)}
+            </span>
+          </span>
+          <span className="pl-chain-arrow">→</span>
+          <span className="pl-chain-step">
+            <span className="pl-chain-step-key">Decision</span>
+            <span className="pl-chain-step-value">{decision}</span>
+          </span>
+        </div>
+      )}
+    </li>
+  );
+}
+
+/** Evidence Ledger — the central trust/verification surface. */
+function EvidenceLedger({ result }: { result: PreflightResult }) {
+  return (
+    <section className="pf-panel" aria-labelledby="ledger-heading">
+      <div className="pf-panel-header">
+        <div>
+          <p className="pf-eyebrow">Central verification surface</p>
+          <h3
+            id="ledger-heading"
+            className="mt-1 text-lg font-semibold tracking-tight text-zinc-900 dark:text-zinc-50"
+          >
+            Evidence Ledger
+          </h3>
+          <p className="mt-1 max-w-xl text-sm leading-6 text-zinc-500 dark:text-zinc-400">
+            Every check records the claim, the evidence that supports it, the rule it satisfies,
+            and the resulting status — the authoritative record of this run.
+          </p>
+        </div>
+        <span className="pl-count">
+          {result.entries.length} {result.entries.length === 1 ? 'entry' : 'entries'}
+        </span>
+      </div>
+      <ol className="pl-ledger-list">
+        {result.entries.length === 0 ? (
+          <li className="px-5 py-10 text-center">
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">
+              No evidence was recorded for this run.
+            </p>
+          </li>
+        ) : (
+          result.entries.map((entry) => <LedgerEntry key={entry.evidenceId} entry={entry} />)
+        )}
+      </ol>
+    </section>
+  );
+}
+
+/* === pf-components-e === */
 
 export default function Home() {
   const [selectedPdf, setSelectedPdf] = useState<File | null>(null);
@@ -376,8 +906,6 @@ export default function Home() {
       setLoading(false);
     }
   }
-
-  const entryCount = result === null ? 0 : result.entries.length;
 
   return (
     <div className="flex min-h-full flex-1 flex-col bg-zinc-50 font-sans text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
@@ -524,159 +1052,32 @@ export default function Home() {
           </div>
         </Card>
 
-        {/* 5. Verification results */}
-        <section className="mt-12">
-          <h2 className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-            Verification results
-          </h2>
-          <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-            {loading
-              ? 'Verification in progress…'
-              : result !== null
-                ? `Preflight completed — ${readinessLabel(result.status)}`
-                : error !== null
-                  ? 'Preflight failed'
-                  : 'Waiting for a submission'}
-          </p>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100">PDF</h3>
-                <StatusBadge
-                  label={
-                    loading
-                      ? 'Running'
-                      : result !== null
-                        ? result.pdfVerified
-                          ? 'Verified'
-                          : 'Not verified'
-                        : 'Pending'
-                  }
-                  tone={result !== null && result.pdfVerified ? 'pass' : 'pending'}
-                />
-              </div>
-              <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-500">
-                {loading
-                  ? 'Uploading and verifying the manuscript…'
-                  : result !== null
-                    ? result.pdfVerified
-                      ? 'Manuscript PDF verified.'
-                      : 'Manuscript PDF not verified.'
-                    : 'Waiting for a submission'}
-              </p>
-            </div>
-            <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Repository</h3>
-                <StatusBadge
-                  label={
-                    loading
-                      ? 'Running'
-                      : result !== null
-                        ? result.repositoryVerified
-                          ? 'Verified'
-                          : 'Not checked'
-                        : 'Pending'
-                  }
-                  tone={result !== null && result.repositoryVerified ? 'pass' : 'pending'}
-                />
-              </div>
-              <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-500">
-                {loading
-                  ? 'Checking the repository…'
-                  : result !== null
-                    ? result.repositoryVerified
-                      ? result.repositorySource === 'github'
-                        ? 'Public GitHub repository fetched and verified.'
-                        : 'Local repository directory verified.'
-                      : 'No repository supplied.'
-                    : 'Waiting for a submission'}
-              </p>
-            </div>
-            <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Evidence</h3>
-                <StatusBadge
-                  label={loading ? 'Running' : result !== null ? `${entryCount}` : 'Pending'}
-                  tone={result !== null ? 'pass' : 'pending'}
-                />
-              </div>
-              <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-500">
-                {loading
-                  ? 'Recording evidence…'
-                  : result !== null
-                    ? `${entryCount} evidence ${entryCount === 1 ? 'entry' : 'entries'} recorded.`
-                    : 'Waiting for a submission'}
-              </p>
-            </div>
-            <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Readiness</h3>
-                <StatusBadge
-                  label={loading ? 'Running' : result !== null ? readinessLabel(result.status) : 'Pending'}
-                  tone={result !== null ? result.status : 'pending'}
-                />
-              </div>
-              <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-500">
-                {loading
-                  ? 'Determining readiness…'
-                  : result !== null
-                    ? `${result.passedCount} passed · ${result.blockingCount} blocking · ${result.humanReviewCount} for review.`
-                    : 'Waiting for a submission'}
-              </p>
-            </div>
-          </div>
-
+        {/* 5. Result experience — deterministic readiness, findings, evidence */}
+        <section className="mt-12 space-y-6">
           {error !== null && (
             <div
               role="alert"
-              className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300"
+              className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/40 dark:text-red-300"
             >
               {error}
             </div>
           )}
 
           {result !== null && (
-            <div className="mt-4 rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h3 className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-                  Readiness: {readinessLabel(result.status)}
-                </h3>
-                <StatusBadge label={readinessLabel(result.status)} tone={result.status} />
+            <>
+              <ReadinessBanner result={result} />
+              <div className="mt-6">
+                <ResultSummary result={result} />
               </div>
-              <div className="mt-4 grid gap-3">
-                {result.findings.length === 0 ? (
-                  <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                    No findings returned by the API.
-                  </p>
-                ) : (
-                  result.findings.map((finding) => (
-                    <article
-                      key={finding.findingId}
-                      className="rounded-md border border-zinc-200 px-4 py-3 dark:border-zinc-800"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                          {finding.ruleId}
-                        </p>
-                        <StatusBadge label={finding.status.toUpperCase()} tone={finding.status} />
-                      </div>
-                      <p className="mt-1 text-sm text-zinc-700 dark:text-zinc-300">{finding.title}</p>
-                      <p className="mt-1 text-xs leading-5 text-zinc-500 dark:text-zinc-400">
-                        {finding.reason}
-                      </p>
-                      <p className="mt-2 font-mono text-[11px] text-zinc-400 dark:text-zinc-500">
-                        Evidence: {finding.evidenceId}
-                      </p>
-                    </article>
-                  ))
-                )}
-              </div>
-            </div>
+              <BlockingIssues result={result} />
+              <ReviewItems result={result} />
+              <Investigation result={result} />
+              <EvidenceLedger result={result} />
+            </>
           )}
 
           {result !== null && result.agentText !== null && (
-            <div className="mt-4 rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h3 className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
                   Explanation
@@ -702,7 +1103,7 @@ export default function Home() {
                       <h4 className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 dark:text-zinc-400">
                         {section.title}
                       </h4>
-                      <AgentSectionBody body={section.body} />
+                      <AgentMarkdown text={section.body} />
                     </div>
                   ))}
                 </div>
@@ -712,79 +1113,6 @@ export default function Home() {
               </p>
             </div>
           )}
-        </section>
-
-        {/* 6 & 7. Evidence ledger + Readiness */}
-        <section className="mt-12 grid gap-6 lg:grid-cols-2">
-          <Card title="Evidence ledger">
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              Every finding links the requirement to the evidence that supports it.
-            </p>
-            {result === null || result.entries.length === 0 ? (
-              <div className="mt-4 rounded-md border border-dashed border-zinc-300 px-4 py-8 text-center dark:border-zinc-700">
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                  {loading ? 'Recording evidence…' : 'No evidence recorded yet.'}
-                </p>
-              </div>
-            ) : (
-              <ul className="mt-4 grid gap-2">
-                {result.entries.map((entry) => (
-                  <li
-                    key={entry.evidenceId}
-                    className="rounded-md border border-zinc-200 px-3 py-2.5 dark:border-zinc-800"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="font-mono text-[11px] text-zinc-700 dark:text-zinc-300">
-                        {entry.evidenceId}
-                      </span>
-                      <StatusBadge label={entry.status.toUpperCase()} tone={entry.status} />
-                    </div>
-                    <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
-                      Rule {entry.ruleId} · value {entry.value} · {entry.sourceType}
-                    </p>
-                    <p className="mt-0.5 font-mono text-[11px] text-zinc-400 dark:text-zinc-500">
-                      {entry.timestamp}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
-
-          <Card title="Readiness">
-            <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              {result === null
-                ? 'Run a preflight to determine the current state.'
-                : `Current state: ${readinessLabel(result.status)} — from the latest API response.`}
-            </p>
-            <div className="mt-4 grid gap-2">
-              {(['ready', 'blocked', 'human_review'] as const).map((state) => {
-                const label = readinessLabel(state);
-                const active = result !== null && result.status === state;
-                return (
-                  <div
-                    key={state}
-                    className="flex items-center justify-between rounded-md border border-zinc-200 px-3 py-2.5 dark:border-zinc-800"
-                  >
-                    <span className="text-xs font-semibold tracking-wide text-zinc-500 dark:text-zinc-400">
-                      {label}
-                    </span>
-                    <span
-                      className={`h-2 w-2 rounded-full ${
-                        active
-                          ? state === 'ready'
-                            ? 'bg-emerald-500'
-                            : state === 'blocked'
-                              ? 'bg-red-500'
-                              : 'bg-amber-500'
-                          : 'bg-zinc-200 dark:bg-zinc-700'
-                      }`}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          </Card>
         </section>
       </main>
 
