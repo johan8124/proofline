@@ -80,6 +80,30 @@ function publicTextField(text: string, repositoryDirectory: string | undefined):
   return text.split(repositoryDirectory).join('[local repository]');
 }
 
+/**
+ * Rewrites the repository-inspection sentence in finding reasons and evidence
+ * details to reflect the actual repository source. The deterministic layer
+ * always records "Local directory inspected: <path>." because it verifies a
+ * directory either way; this public-response boundary makes the wording
+ * accurate for the caller:
+ *   'github' → "Public GitHub repository inspected and verified."
+ *   'local'  → "Local repository directory inspected."
+ *   'none'   → unchanged (no repository evidence exists to reword).
+ */
+function publicInspectionWording(
+  text: string,
+  repositorySource: 'github' | 'local' | 'none',
+): string {
+  if (repositorySource === 'none') {
+    return text;
+  }
+  const replacement =
+    repositorySource === 'github'
+      ? 'Public GitHub repository inspected and verified.'
+      : 'Local repository directory inspected.';
+  return text.replace(/Local directory inspected: .*?\./g, replacement);
+}
+
 export async function POST(request: Request) {
   // Point pdfjs at its real worker file via an absolute file URL. Next's
   // bundler rewrites the library's default relative "./pdf.worker.mjs" into a
@@ -242,18 +266,25 @@ export async function POST(request: Request) {
     // never mutated. Manuscript sourceRef values pointing at server-local
     // temporary paths are replaced with the safe placeholder "manuscript.pdf".
     // Repository directory paths inside finding.reason and evidence.details
-    // are replaced with "[local repository]". Repository URLs and all other
-    // verification facts are preserved unchanged.
+    // are replaced with "[local repository]", and the repository-inspection
+    // sentence is reworded to reflect the actual repository source. Repository
+    // URLs and all other verification facts are preserved unchanged.
     const publicFindings = result.readiness.findings.map((finding) => ({
       ...finding,
       sourceRef: publicSourceRef(finding.sourceRef, tempPdfPath),
-      reason: publicTextField(finding.reason, repositoryDirectory),
+      reason: publicInspectionWording(
+        publicTextField(finding.reason, repositoryDirectory),
+        repositorySource,
+      ),
     }));
     const publicEvidenceEntries = result.evidenceLedger.entries.map((entry) => ({
       ...entry,
       sourceRef: publicSourceRef(entry.sourceRef, tempPdfPath),
       details: entry.details !== undefined
-        ? publicTextField(entry.details, repositoryDirectory)
+        ? publicInspectionWording(
+            publicTextField(entry.details, repositoryDirectory),
+            repositorySource,
+          )
         : undefined,
     }));
 
