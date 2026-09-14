@@ -62,6 +62,19 @@ function publicSourceRef(sourceRef: string, tempManuscriptPath: string | null): 
     : sourceRef;
 }
 
+/**
+ * Replaces a server-local repository directory path inside a free-form text
+ * field (finding reason or evidence details) with a neutral placeholder.
+ * Only the exact directory path is replaced; repository URLs and all other
+ * text are preserved unchanged.
+ */
+function publicTextField(text: string, repositoryDirectory: string | undefined): string {
+  if (repositoryDirectory === undefined) {
+    return text;
+  }
+  return text.split(repositoryDirectory).join('[local repository]');
+}
+
 export async function POST(request: Request) {
   // Point pdfjs at its real worker file via an absolute file URL. Next's
   // bundler rewrites the library's default relative "./pdf.worker.mjs" into a
@@ -194,16 +207,22 @@ export async function POST(request: Request) {
     }
 
     // Build a public-safe response copy: the internal deterministic result is
-    // never mutated. Only manuscript sourceRef values pointing at server-local
+    // never mutated. Manuscript sourceRef values pointing at server-local
     // temporary paths are replaced with the safe placeholder "manuscript.pdf".
-    // Repository URLs and all other verification facts are preserved unchanged.
+    // Repository directory paths inside finding.reason and evidence.details
+    // are replaced with "[local repository]". Repository URLs and all other
+    // verification facts are preserved unchanged.
     const publicFindings = result.readiness.findings.map((finding) => ({
       ...finding,
       sourceRef: publicSourceRef(finding.sourceRef, tempPdfPath),
+      reason: publicTextField(finding.reason, repositoryDirectory),
     }));
     const publicEvidenceEntries = result.evidenceLedger.entries.map((entry) => ({
       ...entry,
       sourceRef: publicSourceRef(entry.sourceRef, tempPdfPath),
+      details: entry.details !== undefined
+        ? publicTextField(entry.details, repositoryDirectory)
+        : undefined,
     }));
 
     return NextResponse.json(
