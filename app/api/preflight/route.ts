@@ -29,6 +29,7 @@ import {
 import {
   preflightFactsFromResult,
   runProoflineAgentWithFacts,
+  runRequestScopedPreflightAgent,
 } from '../../../lib/agent/proofline-real-agent';
 
 /** This route must always run in the Node.js runtime where fs/os exist. */
@@ -47,6 +48,18 @@ function optionalTextField(value: FormDataEntryValue | null): string | undefined
   }
   const trimmed = value.trim();
   return trimmed.length === 0 ? undefined : trimmed;
+}
+
+/**
+ * Returns a public-safe source reference for the API response.
+ * Server-local temporary manuscript paths are replaced with the safe
+ * placeholder "manuscript.pdf". All other source references (repository
+ * URLs, etc.) are returned unchanged.
+ */
+function publicSourceRef(sourceRef: string, tempManuscriptPath: string | null): string {
+  return tempManuscriptPath !== null && sourceRef === tempManuscriptPath
+    ? 'manuscript.pdf'
+    : sourceRef;
 }
 
 export async function POST(request: Request) {
@@ -124,6 +137,24 @@ export async function POST(request: Request) {
     tempPdfPath = join(tempDir, 'manuscript.pdf');
     await writeFile(tempPdfPath, pdfBytes);
 
+    // 1. Request-scoped Strands agent invokes safe verification tools and reasons from observations
+    let orchestrationText: string | null = null;
+    let orchestrationStopReason: string | null = null;
+    let agentUnavailable = false;
+
+    try {
+      const orchestrationResult = await runRequestScopedPreflightAgent({
+        pdfFilePath: tempPdfPath,
+        repositoryDirectory,
+        repositoryUrl,
+      });
+      orchestrationText = orchestrationResult.text;
+      orchestrationStopReason = orchestrationResult.stopReason;
+    } catch {
+      agentUnavailable = true;
+    }
+
+    // 2. Authoritative deterministic preflight runs unconditionally with the exact same inputs
     const result = await runPreflight({
       pdfFilePath: tempPdfPath,
       ...(repositoryDirectory !== undefined && repositoryUrl !== undefined
@@ -131,30 +162,59 @@ export async function POST(request: Request) {
         : {}),
     });
 
-    // Interpretation layer AFTER deterministic verification: only the
-    // computed facts are sent to the model — never the PDF bytes.
+    // 3. Explanation step: synthesize tool observations + authoritative deterministic result
     let agentText: string;
     let agentStopReason: string;
-    try {
-      const agentResult = await runProoflineAgentWithFacts(
-        preflightFactsFromResult(result),
-      );
-      agentText = agentResult.text;
-      agentStopReason = agentResult.stopReason;
-    } catch {
-      // Agent failure must not change the deterministic result.
+
+    if (agentUnavailable) {
       agentText =
         'The deterministic verification completed, but the explanation ' +
         'assistant is temporarily unavailable. The readiness, findings, and ' +
         'evidence above are authoritative.';
       agentStopReason = 'agent_unavailable';
+    } else {
+      try {
+        const facts = preflightFactsFromResult(result);
+        if (orchestrationText !== null) {
+          facts.agentInspectionObservation = orchestrationText;
+        }
+        const explanationResult = await runProoflineAgentWithFacts(facts);
+        agentText = explanationResult.text;
+        agentStopReason = explanationResult.stopReason;
+      } catch {
+        // If explanation step fails, format orchestration observations with required sections
+        agentText =
+          orchestrationText !== null && orchestrationText.trim().length > 0
+            ? orchestrationText
+            : 'The deterministic verification completed, but the explanation ' +
+              'assistant is temporarily unavailable. The readiness, findings, and ' +
+              'evidence above are authoritative.';
+        agentStopReason = orchestrationStopReason ?? 'agent_unavailable';
+      }
     }
+
+    // Build a public-safe response copy: the internal deterministic result is
+    // never mutated. Only manuscript sourceRef values pointing at server-local
+    // temporary paths are replaced with the safe placeholder "manuscript.pdf".
+    // Repository URLs and all other verification facts are preserved unchanged.
+    const publicFindings = result.readiness.findings.map((finding) => ({
+      ...finding,
+      sourceRef: publicSourceRef(finding.sourceRef, tempPdfPath),
+    }));
+    const publicEvidenceEntries = result.evidenceLedger.entries.map((entry) => ({
+      ...entry,
+      sourceRef: publicSourceRef(entry.sourceRef, tempPdfPath),
+    }));
 
     return NextResponse.json(
       {
-        readiness: result.readiness,
-        findings: result.findings,
-        evidenceLedger: result.evidenceLedger,
+        readiness: {
+          ...result.readiness,
+          findings: publicFindings,
+          evidenceLedger: { entries: publicEvidenceEntries },
+        },
+        findings: publicFindings,
+        evidenceLedger: { entries: publicEvidenceEntries },
         pdfVerified: result.pdfVerified,
         repositoryVerified: result.repositoryVerified,
         agentText,

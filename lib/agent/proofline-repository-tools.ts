@@ -62,8 +62,6 @@ export interface VerifyLocalRepositoryToolInput {
 
 /** Concise, JSON-safe result returned by the verify_local_repository tool. */
 export interface VerifyLocalRepositoryToolResult {
-  /** The local directory path that was inspected. */
-  directoryPath: string;
   /** The repository URL recorded in the snapshot and evidence. */
   repositoryUrl: string;
   /** Identifier of the constructed repository rule. */
@@ -261,7 +259,6 @@ export const verifyLocalRepositoryTool = new FunctionTool({
         : undefined;
 
     const toolResult: VerifyLocalRepositoryToolResult = {
-      directoryPath,
       repositoryUrl,
       ruleId: result.validation.ruleId,
       ruleType: result.validation.ruleType,
