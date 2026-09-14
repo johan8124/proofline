@@ -1,6 +1,6 @@
 # Proofline
 
-Proofline is an agentic submission preflight system that verifies whether a research submission package is actually ready. It performs deterministic checks on the manuscript and repository, records the results as evidence, derives a readiness state, and uses a Strands agent to explain the verified findings and recommend next actions.
+Proofline is an agentic submission preflight system that verifies whether a research submission package is actually ready. It performs deterministic checks on the manuscript and repository, records the results as evidence, derives a readiness state, and uses two Strands agent stages: a request-scoped orchestration agent that calls verification tools and reasons from observations, followed by a facts-only explanation agent that summarizes the authoritative result.
 
 ## Problem
 
@@ -8,12 +8,13 @@ Before submitting a paper to a conference or workshop, a researcher has to manua
 
 ## Solution
 
-Proofline combines four layers with strictly separated responsibilities:
+Proofline combines five layers with strictly separated responsibilities:
 
-1. **Deterministic verification** — plain TypeScript code inspects the uploaded PDF and the local repository directory against a rule pack. No AI is involved in these checks.
-2. **Evidence Ledger** — every check produces an immutable evidence entry recording what was checked, what was observed, and whether it passed, failed, or could not be verified.
-3. **ReadinessResult** — the findings are deterministically aggregated into one of three states: `READY`, `BLOCKED`, or `HUMAN REVIEW`.
-4. **Strands agent explanation** — a Strands agent (via Groq) receives the verified facts and writes a human-readable explanation with recommended next actions. It explains the results; it never decides them.
+1. **Request-scoped orchestration agent** — a Strands agent calls `inspect_manuscript` and (when a repository is supplied) `inspect_repository`, then reasons from the actual tool observations. Server-local PDF and repository paths are closed over by the tools and are never exposed as free-form model parameters.
+2. **Deterministic verification** — `runPreflight()` inspects the uploaded PDF and the local repository directory against a rule pack. No AI is involved in these checks; this step is authoritative for readiness, findings, and the Evidence Ledger.
+3. **Evidence Ledger** — every deterministic check produces an immutable evidence entry recording what was checked, what was observed, and whether it passed, failed, or could not be verified.
+4. **ReadinessResult** — the findings are deterministically aggregated into one of three states: `READY`, `BLOCKED`, or `HUMAN REVIEW`.
+5. **Facts-only explanation agent** — a second Strands agent with **no verification tools registered** receives the authoritative deterministic facts plus the sanitized orchestration observations and writes a human-readable explanation. It explains the results; it never decides them.
 
 ## Core workflow
 
@@ -21,18 +22,21 @@ Proofline combines four layers with strictly separated responsibilities:
 User
 → PDF upload
 → POST /api/preflight
-→ deterministic verification
-→ Evidence Ledger
-→ ReadinessResult
-→ Strands/Groq explanation
-→ UI
+→ request-scoped Strands agent
+   → inspect_manuscript
+   → inspect_repository when applicable
+   → tool observations
+→ deterministic runPreflight
+→ Evidence Ledger + ReadinessResult
+→ facts-only Strands explanation
+→ UI/API response
 ```
 
 Three invariants hold throughout:
 
-- **Deterministic code decides factual verification results.** Page counts, file presence, and rule outcomes come from code, never from a model.
-- **The agent explains the verified facts.** It receives the readiness state, findings, and evidence ledger as input.
-- **Agent output cannot alter readiness, findings, or evidence.** If the agent is unavailable, the deterministic payload is still returned, marked `agent_unavailable`.
+- **`runPreflight()` is authoritative.** Page counts, file presence, rule outcomes, the Evidence Ledger, and the readiness state all come from deterministic code, never from a model.
+- **The orchestration agent reasons from actual tool observations.** It calls `inspect_manuscript` and (when applicable) `inspect_repository`; it never invents verification facts.
+- **AI output cannot change the deterministic result.** The explanation step receives authoritative facts plus sanitized orchestration observations. If either agent is unavailable, the deterministic payload is still returned, marked `agent_unavailable`.
 
 ## Current capabilities
 
@@ -45,7 +49,7 @@ What Proofline does today:
 - **Repository file checks** — `repository_accessible`, `required_repository_file_readme` (`README.md`), `required_repository_file_license` (`LICENSE`), and `required_repository_file_supplementary` (`figures/results.pdf`).
 - **Evidence Ledger** — one immutable ledger per preflight run, with one entry per check.
 - **READY / BLOCKED / HUMAN REVIEW states** — derived deterministically from the findings.
-- **Strands Agents SDK explanation agent** — the `@strands-agents/sdk` `Agent` explains the verified facts.
+- **Two-stage Strands Agents SDK architecture** — a request-scoped orchestration agent calls `inspect_manuscript` and (when applicable) `inspect_repository`, then a facts-only explanation agent with no verification tools generates the human-readable summary.
 - **Groq OpenAI-compatible endpoint** — the Strands `OpenAIModel` points at `https://api.groq.com/openai/v1` (model `openai/gpt-oss-120b`); no separate Groq client is created.
 - **API validation and temporary PDF cleanup** — malformed requests return structured 400 errors; the uploaded PDF is written to a temporary directory, verified, and deleted in a `finally` block.
 
@@ -65,10 +69,24 @@ Evidence IDs and timestamps are generated by the **application layer**, not by t
 
 ## Agent architecture
 
-- The explanation layer uses the **Strands Agents SDK** (`@strands-agents/sdk`), with the Strands `OpenAIModel` pointed at Groq's OpenAI-compatible Chat Completions endpoint.
-- The explanation agent receives the **deterministic facts** — readiness state, counts, findings, evidence ledger, and the `pdfVerified`/`repositoryVerified` flags — serialized as its prompt. Only these facts are sent; the manuscript PDF bytes are **not** sent to Groq.
-- In the final facts-explanation path the agent is constructed with **no verification tools registered** (`tools: []`), so it cannot re-verify anything or fabricate tool results. It can only explain the supplied facts.
+Proofline uses two distinct Strands agent stages, both backed by the `@strands-agents/sdk` with the `OpenAIModel` pointed at Groq's OpenAI-compatible endpoint (`openai/gpt-oss-120b`).
+
+### Stage 1: Request-scoped orchestration agent
+
+- Created per-request with tools that **close over server-local paths** — the model receives `inspect_manuscript` and (when a repository is supplied) `inspect_repository` as zero-argument tools. The PDF path and repository directory path are never exposed as free-form model parameters.
+- The agent reasons from actual tool observations and cannot invent verification facts.
+- Its output is a convenience observation trace; it has no authority over the readiness result.
+
+### Stage 2: Facts-only explanation agent
+
+- Constructed with **no verification tools registered** (`tools: []`), so it cannot re-verify anything or fabricate tool results.
+- Receives the authoritative deterministic facts — readiness state, counts, findings, evidence ledger, `pdfVerified`/`repositoryVerified` flags — plus the sanitized orchestration observations, serialized as its prompt. Only these facts are sent; the manuscript PDF bytes are **not** sent to Groq.
 - It **cannot change the deterministic result**: the API returns the deterministic payload regardless of agent output, and agent failure degrades to an explicit `agent_unavailable` message.
+
+### Security behavior
+
+- Manuscript `sourceRef` values pointing at the temporary server-side upload are returned publicly as `"manuscript.pdf"`. The internal deterministic result is not mutated; only a public-safe copy of the response is sanitized.
+- No server filesystem paths or temporary directory prefixes are included in the facts sent to either agent.
 
 ## Architecture
 
@@ -76,20 +94,23 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the Mermaid architecture 
 
 ## Test scenarios
 
-The following end-to-end scenarios were verified against the running application:
+The following scenarios were verified against the running `POST /api/preflight` endpoint (not browser-level end-to-end testing):
 
-1. **7-page PDF + complete repository → READY** — all page-limit and repository checks pass.
-2. **7-page PDF + incomplete repository → BLOCKED** — `required_repository_file_supplementary` fails because `figures/results.pdf` is missing.
-3. **9-page PDF → BLOCKED** — `page_limit_max_8` fails.
-4. **Corrupt PDF → HUMAN REVIEW** — the page count cannot be determined, so `page_limit_max_8` becomes `needs_review` with `unsupported` evidence.
+1. **1-page valid PDF → READY** — the page-limit check passes.
+2. **9-page valid PDF → BLOCKED** — `page_limit_max_8` fails.
+3. **Header-valid but structurally invalid PDF → HUMAN REVIEW** — the page count cannot be determined, so `page_limit_max_8` becomes `needs_review` with `unsupported` evidence.
+4. **Request-scoped Strands tool invocation** — `inspect_manuscript` is actually called by the orchestration agent.
+5. **No server filesystem path in captured tool observations** — tool results never contain server-local paths.
+6. **Public API `sourceRef`** — manuscript `sourceRef` uses `manuscript.pdf` instead of the temporary server path.
+7. **Repository fixtures** — complete and incomplete repository fixtures exist and represent the documented repository checks.
 
 Permanent fixtures in the repository:
 
-- `test-fixtures/pdfs/corrupt.pdf` — a deliberately malformed PDF.
+- `test-fixtures/pdfs/corrupt.pdf` — a deliberately malformed PDF (header-valid but structurally invalid).
 - `test-fixtures/repositories/complete-repository/` — contains `README.md`, `LICENSE`, and `figures/results.pdf`.
 - `test-fixtures/repositories/incomplete-repository/` — contains `README.md` and `LICENSE` but no `figures/results.pdf`.
 
-The 7-page and 9-page PDFs used in scenarios 1–3 were **generated for smoke testing** (minimal PDFs with a fixed number of pages) and are **not committed** to the repository.
+The 1-page and 9-page PDFs used in scenarios 1–2 were **generated for smoke testing** (minimal PDFs with a fixed number of pages) and are **not committed** to the repository.
 
 ## Local setup
 
@@ -163,7 +184,7 @@ Pass the fixture's absolute path as `repositoryDirectory` (together with a `repo
 
 - **Next.js** (App Router, TypeScript) — UI and API route
 - **TypeScript** — the entire codebase
-- **Strands Agents SDK** (`@strands-agents/sdk`) — agent orchestration for the explanation layer
+- **Strands Agents SDK** (`@strands-agents/sdk`) — two-stage agent orchestration: request-scoped verification tool invocation and facts-only explanation
 - **Groq** — OpenAI-compatible LLM endpoint (`openai/gpt-oss-120b`)
 - **pdfjs-dist** — server-side PDF page-count inspection
 
