@@ -1,8 +1,68 @@
 @import "tailwindcss";
 
+/* ---------------------------------------------------------------------------
+   Proofline design tokens.
+   Light/dark surfaces and status accents drive the bespoke result-experience
+   components (readiness banner, evidence ledger, cross-artifact chain).
+   Tailwind's zinc utilities still handle most everyday surfaces.
+--------------------------------------------------------------------------- */
+
 :root {
   --background: #ffffff;
-  --foreground: #171717;
+  --foreground: #18181b;
+
+  --pf-surface: #ffffff;
+  --pf-surface-muted: #fafafa;
+  --pf-border: #e4e4e7;
+  --pf-border-strong: #d4d4d8;
+  --pf-text-secondary: #52525b;
+  --pf-text-muted: #71717a;
+  --pf-text-faint: #a1a1aa;
+
+  --pf-ready: #059669;
+  --pf-ready-ink: #064e3b;
+  --pf-ready-tint: #ecfdf5;
+  --pf-ready-border: #a7f3d0;
+
+  --pf-blocked: #dc2626;
+  --pf-blocked-ink: #7f1d1d;
+  --pf-blocked-tint: #fef2f2;
+  --pf-blocked-border: #fecaca;
+
+  --pf-review: #d97706;
+  --pf-review-ink: #78350f;
+  --pf-review-tint: #fffbeb;
+  --pf-review-border: #fde68a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #09090b;
+    --foreground: #f4f4f5;
+
+    --pf-surface: #111113;
+    --pf-surface-muted: #0c0c0e;
+    --pf-border: #26262b;
+    --pf-border-strong: #3f3f46;
+    --pf-text-secondary: #d4d4d8;
+    --pf-text-muted: #a1a1aa;
+    --pf-text-faint: #71717a;
+
+    --pf-ready: #34d399;
+    --pf-ready-ink: #a7f3d0;
+    --pf-ready-tint: rgba(16, 185, 129, 0.08);
+    --pf-ready-border: rgba(16, 185, 129, 0.35);
+
+    --pf-blocked: #f87171;
+    --pf-blocked-ink: #fecaca;
+    --pf-blocked-tint: rgba(239, 68, 68, 0.08);
+    --pf-blocked-border: rgba(239, 68, 68, 0.35);
+
+    --pf-review: #fbbf24;
+    --pf-review-ink: #fde68a;
+    --pf-review-tint: rgba(245, 158, 11, 0.08);
+    --pf-review-border: rgba(245, 158, 11, 0.35);
+  }
 }
 
 @theme inline {
@@ -12,15 +72,897 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-feature-settings: "ss01", "cv11";
+  text-rendering: optimizeLegibility;
+}
+
+/*
+ * Subtle background depth for dark mode only.
+ * Adds a fine grid texture, a warm ambient radial glow, and a soft
+ * edge vignette — all purely decorative, never affecting readability
+ * or layout.
+ */
+@media (prefers-color-scheme: dark) {
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: -1;
+    /* Fine grid — technical paper feel, slightly more visible */
+    background-image:
+      linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: -1;
+    /* Warm ambient radial glow — visible behind content */
+    background: radial-gradient(
+      ellipse at 50% 30%,
+      rgba(180, 180, 185, 0.08) 0%,
+      rgba(180, 180, 185, 0.06) 30%,
+      rgba(180, 180, 185, 0.03) 55%,
+      transparent 70%
+    );
+    /* Soft edge vignette for depth */
+    box-shadow: inset 0 0 150px rgba(0, 0, 0, 0.5);
+  }
+}
+
+/* ===========================================================================
+   Submission Proof Artifact — visual evidence document for the hero
+   ========================================================================== */
+
+.submission-proof-wrapper {
+  perspective: 1200px;
+  transform-style: preserve-3d;
+}
+
+.submission-proof-paper {
+  position: relative;
+  /* Denser surface (raised alphas + solid dark base under the gradient)
+     so constellation bleed-through no longer competes with the text. */
+  background:
+    linear-gradient(
+      165deg,
+      rgba(255, 255, 255, 0.1) 0%,
+      rgba(200, 200, 205, 0.07) 50%,
+      rgba(255, 255, 255, 0.04) 100%
+    ),
+    rgba(9, 9, 11, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  padding: 24px 28px;
+  transform: rotateX(2deg) rotateY(-3deg) translateZ(10px);
+  box-shadow:
+    0 30px 60px rgba(0, 0, 0, 0.5),
+    0 10px 20px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(8px);
+  min-height: 480px;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              box-shadow 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.submission-proof-paper::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 32px 32px;
+  pointer-events: none;
+  border-radius: 14px;
+}
+
+/* Subtle glow behind the artifact */
+.submission-proof-wrapper::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 60%;
+  height: 60%;
+  transform: translate(-50%, -50%) translateZ(-20px);
+  background: radial-gradient(
+    ellipse at center,
+    rgba(180, 180, 185, 0.1) 0%,
+    transparent 70%
+  );
+  filter: blur(20px);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Hover effect */
+@media (hover: hover) {
+  .submission-proof-wrapper:hover .submission-proof-paper {
+    transform: rotateX(1deg) rotateY(-2deg) translateZ(15px);
+    box-shadow:
+      0 40px 80px rgba(0, 0, 0, 0.6),
+      0 15px 30px rgba(0, 0, 0, 0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+}
+
+/* Responsive */
+@media (max-width: 1023px) {
+  .submission-proof-paper {
+    height: auto;
+    min-height: 420px;
+    transform: none;
+  }
+
+  .sp-chain-arrow {
+    transform: rotate(90deg);
+    padding: 4px 0 4px 12px;
+  }
+}
+
+@media (max-width: 639px) {
+  .submission-proof-paper {
+    padding: 18px 20px;
+    height: auto;
+    min-height: 380px;
+  }
+
+  .sp-chain-detail {
+    display: none;
+  }
+}
+
+/* Header */
+.sp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  margin-bottom: 20px;
+}
+
+.sp-header-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.sp-badge {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(168, 168, 168, 0.8);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.sp-header-right {
+  display: flex;
+  align-items: center;
+  color: rgba(168, 168, 168, 0.6);
+}
+
+.sp-status-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(168, 168, 168, 0.6);
+}
+
+.sp-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #34d399;
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.4);
+}
+
+/* Sections */
+.sp-section {
+  margin-bottom: 18px;
+}
+
+.sp-section-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(168, 168, 168, 0.7);
+  margin-bottom: 12px;
+}
+
+/* Package section */
+.sp-section--package {
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+
+.sp-package-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+}
+
+.sp-package-row:not(:last-child) {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.sp-package-name {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 12px;
+  color: rgba(244, 244, 245, 0.7);
+}
+
+.sp-verified-badge {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #34d399;
+  background: rgba(52, 211, 153, 0.1);
+  border: 1px solid rgba(52, 211, 153, 0.2);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.sp-checked-badge {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(217, 119, 6);
+  background: rgba(217, 119, 6, 0.08);
+  border: 1px solid rgba(217, 119, 6, 0.2);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+/* Divider */
+.sp-divider {
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent,
+    rgba(255, 255, 255, 0.06) 20%,
+    rgba(255, 255, 255, 0.06) 80%,
+    transparent
+  );
+  margin: 18px 0;
+}
+
+/* Evidence chain section */
+.sp-section--evidence {
+  flex: 1;
+}
+
+.sp-chain-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.sp-chain-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 0;
+  position: relative;
+}
+
+.sp-chain-step::before {
+  content: "";
+  position: absolute;
+  left: 14px;
+  top: 100%;
+  width: 1px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.sp-chain-step:last-child::before {
+  display: none;
+}
+
+.sp-chain-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(168, 168, 168, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+  margin-top: 2px;
+  z-index: 1;
+}
+
+.sp-chain-dot--ready {
+  background: #059669;
+  border-color: rgba(5, 150, 105, 0.4);
+  box-shadow: 0 0 10px rgba(5, 150, 105, 0.3);
+}
+
+.sp-chain-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(244, 244, 245, 0.8);
+  flex: 1;
+}
+
+.sp-chain-label--bold {
+  font-weight: 600;
+  color: rgba(244, 244, 245, 0.95);
+}
+
+.sp-chain-detail {
+  display: block;
+  font-size: 10px;
+  color: rgba(168, 168, 168, 0.5);
+  margin-top: 2px;
+}
+
+.sp-chain-arrow {
+  display: flex;
+  justify-content: center;
+  padding: 2px 0;
+  color: rgba(168, 168, 168, 0.25);
+}
+
+.sp-chain-arrow {
+  display: flex;
+  justify-content: center;
+  padding: 2px 0;
+  color: rgba(168, 168, 168, 0.25);
+}
+
+/* Footer */
+.sp-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 14px;
+  margin-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.sp-footer-left,
+.sp-footer-right {
+  display: flex;
+  align-items: center;
+}
+
+.sp-evidence-marker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sp-evidence-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(168, 168, 168, 0.4);
+  animation: pulse-dot 3s ease-in-out infinite;
+}
+
+@keyframes pulse-dot {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.2);
+  }
+}
+
+/* ===========================================================================
+   Result experience
+   ========================================================================== */
+
+/* Small uppercase kicker used across result sections. */
+.pf-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--pf-text-muted);
+}
+
+/* Generic quiet result panel (one surface, no card-in-card nesting). */
+.pf-panel {
+  border-radius: 14px;
+  border: 1px solid var(--pf-border);
+  background: var(--pf-surface);
+}
+
+.pf-panel-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px;
+}
+
+.pf-panel-body {
+  padding: 20px;
+}
+
+/* -- Readiness banner (strongest visual element) ------------------------- */
+
+.pl-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border-radius: 16px;
+  border: 1px solid var(--pf-border);
+  padding: 24px;
+}
+
+@media (min-width: 640px) {
+  .pl-banner {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 18px;
+    padding: 28px;
+  }
+}
+
+.pl-banner-ready {
+  background: var(--pf-ready-tint);
+  border-color: var(--pf-ready-border);
+  color: var(--pf-ready-ink);
+}
+
+.pl-banner-blocked {
+  background: var(--pf-blocked-tint);
+  border-color: var(--pf-blocked-border);
+  color: var(--pf-blocked-ink);
+}
+
+.pl-banner-human_review {
+  background: var(--pf-review-tint);
+  border-color: var(--pf-review-border);
+  color: var(--pf-review-ink);
+}
+
+.pl-banner-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
+}
+
+.pl-banner-content {
+  min-width: 0;
+  flex: 1;
+}
+
+.pl-banner .pf-eyebrow {
+  color: color-mix(in srgb, currentColor 72%, transparent);
+}
+
+.pl-banner-title {
+  margin-top: 2px;
+  font-size: 2rem;
+  line-height: 1.08;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+@media (min-width: 640px) {
+  .pl-banner-title {
+    font-size: 2.25rem;
+  }
+}
+
+.pl-banner-copy {
+  margin-top: 10px;
+  max-width: 58ch;
+  font-size: 14px;
+  line-height: 1.6;
+  color: color-mix(in srgb, currentColor 84%, transparent);
+}
+
+/* -- Result summary strip ------------------------------------------------ */
+
+.pl-stat {
+  border: 1px solid var(--pf-border);
+  border-radius: 12px;
+  background: var(--pf-surface);
+  padding: 14px 16px;
+}
+
+.pl-stat-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pf-text-faint);
+}
+
+.pl-stat-value {
+  margin-top: 6px;
+  font-size: 22px;
+  line-height: 1.1;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--foreground);
+}
+
+.pl-stat-sub {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--pf-text-muted);
+}
+
+.pl-stat--blocked .pl-stat-value {
+  color: var(--pf-blocked);
+}
+
+.pl-stat--review .pl-stat-value {
+  color: var(--pf-review);
+}
+
+.pl-count {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  border: 1px solid var(--pf-border);
+  border-radius: 9999px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--pf-text-muted);
+  background: var(--pf-surface-muted);
+}
+
+.pl-count--blocked {
+  color: var(--pf-blocked);
+  border-color: color-mix(in srgb, var(--pf-blocked) 30%, transparent);
+  background: color-mix(in srgb, var(--pf-blocked) 8%, transparent);
+}
+
+.pl-count--review {
+  color: var(--pf-review);
+  border-color: color-mix(in srgb, var(--pf-review) 30%, transparent);
+  background: color-mix(in srgb, var(--pf-review) 8%, transparent);
+}
+
+/* -- Blocking / review finding lists ------------------------------------- */
+
+.pl-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pl-list-item {
+  padding: 18px 20px;
+  border-top: 1px solid var(--pf-border);
+}
+
+.pl-list-item:first-child {
+  border-top: none;
+}
+
+.pl-index {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border-radius: 9999px;
+  border: 1px solid var(--pf-border);
+  background: var(--pf-surface-muted);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--pf-text-muted);
+}
+
+.pl-remediation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--pf-border);
+  padding: 9px 12px;
+}
+
+.pl-remediation[data-tone="blocked"] {
+  border-color: color-mix(in srgb, var(--pf-blocked) 25%, transparent);
+  background: color-mix(in srgb, var(--pf-blocked) 6%, transparent);
+}
+
+.pl-remediation[data-tone="review"] {
+  border-color: color-mix(in srgb, var(--pf-review) 25%, transparent);
+  background: color-mix(in srgb, var(--pf-review) 6%, transparent);
+}
+
+.pl-remediation-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--pf-text-muted);
+}
+
+.pl-remediation-text {
+  font-size: 13px;
+  color: var(--foreground);
+}
+
+/* -- Investigation -------------------------------------------------------- */
+
+.pl-investigation-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.pl-investigation-cell {
+  padding: 16px 20px;
+}
+
+@media (min-width: 768px) {
+  .pl-investigation-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .pl-investigation-cell {
+    padding: 18px 24px;
+  }
+
+  .pl-investigation-cell + .pl-investigation-cell {
+    border-left: 1px solid var(--pf-border);
+  }
+}
+
+.pl-investigation-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pf-text-faint);
+}
+
+.pl-investigation-value {
+  margin-top: 5px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--foreground);
+  word-break: break-word;
+}
+
+.pl-investigation-sub {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--pf-text-muted);
+  word-break: break-word;
+}
+
+/* -- Evidence Ledger ------------------------------------------------------ */
+
+.pl-ledger-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pl-ledger-record {
+  padding: 18px 20px;
+  border-top: 1px solid var(--pf-border);
+}
+
+.pl-ledger-record:first-child {
+  border-top: none;
+}
+
+.pl-ledger-record-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 14px;
+}
+
+.pl-ledger-fields {
+  display: grid;
+  gap: 14px;
+}
+
+@media (min-width: 768px) {
+  .pl-ledger-fields {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    column-gap: 28px;
+    row-gap: 14px;
+  }
+
+  .pl-ledger-field--span {
+    grid-column: 1 / -1;
+  }
+}
+
+.pl-ledger-field dt {
+  margin-bottom: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pf-text-faint);
+}
+
+.pl-ledger-field dd {
+  color: var(--foreground);
+}
+
+/* -- Cross-artifact chain ------------------------------------------------ */
+
+.pl-chain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 8px 6px;
+}
+
+.pl-chain-step {
+  flex: 1 1 138px;
+  min-width: 0;
+  border: 1px solid var(--pf-border);
+  border-radius: 10px;
+  background: var(--pf-surface-muted);
+  padding: 10px 12px;
+}
+
+.pl-chain-step-key {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--pf-text-faint);
+}
+
+.pl-chain-step-value {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo,
+    Consolas, monospace;
+  word-break: break-word;
+  color: var(--foreground);
+}
+
+.pl-chain-step-note {
+  display: block;
+  margin-top: 3px;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--pf-text-muted);
+  word-break: break-word;
+}
+
+.pl-chain-arrow {
+  align-self: center;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--pf-text-faint);
+}
+
+/* Decision step inherits the entry status accent. */
+.pl-chain-pass .pl-chain-step:last-child {
+  border-color: color-mix(in srgb, var(--pf-ready) 40%, transparent);
+  background: var(--pf-ready-tint);
+}
+
+.pl-chain-pass .pl-chain-step:last-child .pl-chain-step-value {
+  color: var(--pf-ready);
+}
+
+.pl-chain-fail .pl-chain-step:last-child {
+  border-color: color-mix(in srgb, var(--pf-blocked) 40%, transparent);
+  background: var(--pf-blocked-tint);
+}
+
+.pl-chain-fail .pl-chain-step:last-child .pl-chain-step-value {
+  color: var(--pf-blocked);
+}
+
+.pl-chain-needs_review .pl-chain-step:last-child,
+.pl-chain-unsupported .pl-chain-step:last-child {
+  border-color: color-mix(in srgb, var(--pf-review) 40%, transparent);
+  background: var(--pf-review-tint);
+}
+
+.pl-chain-needs_review .pl-chain-step:last-child .pl-chain-step-value,
+.pl-chain-unsupported .pl-chain-step:last-child .pl-chain-step-value {
+  color: var(--pf-review);
+}
+
+/* -- Agent explanation (visually secondary) ------------------------------- */
+
+.pl-agent-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--pf-text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ===========================================================================
+   Constellation background — decorative ThreeUI particle field
+   ========================================================================== */
+
+.proofline-page {
+  position: relative;
+  min-height: 100vh;
+}
+
+.proofline-constellation {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+  /* Quieter backdrop: uniform ~25% reduction so the hero and proof
+     artifact keep visual priority. Component/props untouched. */
+  opacity: 0.75;
+}
+
+/*
+ * Layering contract:
+ *   .proofline-constellation  fixed, z-index: -1  — ThreeUI ConstellationField
+ *   .proofline-content        relative, z-index: 1 — foreground content
+ *
+ * .proofline-content must NOT set an opaque dark background: the page wrapper
+ * is transparent in dark mode so the constellation (whose canvas supplies its
+ * own opaque #070914 base) remains visible behind the content. Content panels
+ * (header, cards, form controls, result panels) keep their own surfaces.
+ */
+.proofline-content {
+  position: relative;
+  z-index: 1;
 }

@@ -149,12 +149,38 @@ export const EXAMPLE_URL_NEEDS_REVIEW: EvidenceEntry = {
   recommendedAction: 'human_review',
 };
 
-/** Example ledger containing all three example entries. */
+/**
+ * Example 4 (cross-artifact): the repository results artifact observed present
+ * satisfies the manuscript-side 'required_file_supplementary' venue rule. The
+ * ruleId is the repository-side cross-artifact rule
+ * ('supplementary_results_artifact_figures_results'); the details record the
+ * linked manuscript-side rule so the relationship is traceable in the ledger
+ * without ever being used to infer facts.
+ */
+export const EXAMPLE_SUPPLEMENTARY_ARTIFACT_CROSS_LINK: EvidenceEntry = {
+  evidenceId: 'ev-0004',
+  ruleId: 'supplementary_results_artifact_figures_results',
+  sourceType: 'repository',
+  sourceRef: 'https://github.com/example/proofline-verified',
+  checked: 'supplementary_results_artifact_present',
+  value: 'present',
+  details:
+    "Repository artifact 'figures/results.pdf' (category 'artifact', " +
+    "availability 'present') satisfies manuscript-side venue rule " +
+    "'required_file_supplementary' (The submission must include supplementary.pdf.).",
+  status: 'pass',
+  confidence: { level: 'high', basis: 'directly observed by the deterministic local repository collector' },
+  timestamp: '2026-09-13T00:00:04.000Z',
+  recommendedAction: 'none',
+};
+
+/** Example ledger containing all four example entries. */
 export const EXAMPLE_EVIDENCE_LEDGER: EvidenceLedger = {
   entries: [
     EXAMPLE_PDF_PAGE_COUNT_PASS,
     EXAMPLE_REQUIRED_FILE_MISSING,
     EXAMPLE_URL_NEEDS_REVIEW,
+    EXAMPLE_SUPPLEMENTARY_ARTIFACT_CROSS_LINK,
   ],
 };
 

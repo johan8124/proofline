@@ -40,8 +40,6 @@ export interface VerifyPdfPageLimitToolInput {
 
 /** Concise, JSON-safe result returned by the verify_pdf_page_limit tool. */
 export interface VerifyPdfPageLimitToolResult {
-  /** The local file path that was verified. */
-  filePath: string;
   /** Fixed identity of the page-limit rule used. */
   ruleId: string;
   /** Venue-rule validation status ('pass' | 'fail' | 'unsupported'). */
@@ -149,7 +147,6 @@ export const verifyPdfPageLimitTool = new FunctionTool({
     );
 
     const toolResult: VerifyPdfPageLimitToolResult = {
-      filePath: result.filePath,
       ruleId: result.evidence.ruleId,
       validationStatus: result.validation.status,
       validationReason: result.validation.reason,

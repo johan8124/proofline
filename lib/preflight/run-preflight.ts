@@ -174,12 +174,15 @@ export async function runPreflight(input: RunPreflightInput): Promise<RunPreflig
   }
 
   // 3+4. Findings → ReadinessResult from the single ledger for this run.
+  // The readiness result contains the authoritative (possibly deduplicated) findings.
+  // Return readiness.findings as the canonical findings so all consumers get the
+  // same deduplicated array.
   const findings = ledger.entries.map((entry) => readinessFindingFromEvidence(entry));
   const readiness = buildReadinessResult(findings, ledger);
 
   return {
     readiness,
-    findings,
+    findings: readiness.findings,
     evidenceLedger: ledger,
     pdfVerified: true,
     repositoryVerified: input.repositoryDirectory !== undefined,
