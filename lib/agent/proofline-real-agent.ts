@@ -351,6 +351,8 @@ export interface PreflightFacts {
   pdfVerified: boolean;
   /** Whether the local repository was provided and verified. */
   repositoryVerified: boolean;
+  /** Whether verification came from a fetched public GitHub repo, a local directory, or no repo. */
+  repositorySource: 'github' | 'local' | 'none';
   /** Optional observation trace from the request-scoped orchestration agent. */
   agentInspectionObservation?: string;
 }
@@ -429,6 +431,7 @@ export function buildPreflightFactsPrompt(facts: PreflightFacts): string {
     evidenceLedger: sanitizeFactsForPrompt(facts.evidenceLedger),
     pdfVerified: facts.pdfVerified,
     repositoryVerified: facts.repositoryVerified,
+    repositorySource: facts.repositorySource,
     ...(facts.agentInspectionObservation !== undefined
       ? { agentToolObservations: sanitizeFactsForPrompt(facts.agentInspectionObservation) }
       : {}),
@@ -481,13 +484,16 @@ export async function runProoflineAgentWithFacts(
  * Builds PreflightFacts from an already-computed deterministic preflight
  * result. Pure projection — no validation logic, no model calls.
  */
-export function preflightFactsFromResult(result: {
-  readiness: ReadinessResult;
-  findings: readonly ReadinessFinding[];
-  evidenceLedger: EvidenceLedger;
-  pdfVerified: boolean;
-  repositoryVerified: boolean;
-}): PreflightFacts {
+export function preflightFactsFromResult(
+  result: {
+    readiness: ReadinessResult;
+    findings: readonly ReadinessFinding[];
+    evidenceLedger: EvidenceLedger;
+    pdfVerified: boolean;
+    repositoryVerified: boolean;
+  },
+  repositorySource: 'github' | 'local' | 'none',
+): PreflightFacts {
   return {
     readinessStatus: result.readiness.status,
     passedCount: result.readiness.passedCount,
@@ -497,5 +503,6 @@ export function preflightFactsFromResult(result: {
     evidenceLedger: result.evidenceLedger,
     pdfVerified: result.pdfVerified,
     repositoryVerified: result.repositoryVerified,
+    repositorySource,
   };
 }

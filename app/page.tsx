@@ -48,7 +48,10 @@ interface PreflightResult {
   blockingCount: number;
   humanReviewCount: number;
   pdfVerified: boolean;
+  /** Whether a repository (local directory or fetched public GitHub repo) was verified. */
   repositoryVerified: boolean;
+  /** How the repository was verified: "github" for fetched public repos, "local" for user directories, "none" otherwise. */
+  repositorySource: 'github' | 'local' | 'none';
   /** Explanatory agent text (never authoritative for verification state). */
   agentText: string | null;
   /** Why the agent turn stopped: "endTurn" | "agent_unavailable" | other. */
@@ -83,7 +86,8 @@ function optionalString(value: unknown): string | undefined {
  */
 function parsePreflightResult(body: unknown): PreflightResult | null {
   if (!isRecord(body)) return null;
-  const { readiness, findings, evidenceLedger, pdfVerified, repositoryVerified } = body;
+  const { readiness, findings, evidenceLedger, pdfVerified, repositoryVerified, repositorySource } =
+    body;
   if (!isRecord(readiness) || typeof readiness.status !== 'string') return null;
   if (
     readiness.status !== 'ready' &&
@@ -95,6 +99,13 @@ function parsePreflightResult(body: unknown): PreflightResult | null {
   if (!Array.isArray(findings) || !isRecord(evidenceLedger)) return null;
   if (!Array.isArray(evidenceLedger.entries)) return null;
   if (typeof pdfVerified !== 'boolean' || typeof repositoryVerified !== 'boolean') return null;
+  if (
+    repositorySource !== 'github' &&
+    repositorySource !== 'local' &&
+    repositorySource !== 'none'
+  ) {
+    return null;
+  }
 
   const parsedFindings: PreflightFinding[] = [];
   for (const item of findings) {
@@ -169,6 +180,7 @@ function parsePreflightResult(body: unknown): PreflightResult | null {
     humanReviewCount,
     pdfVerified,
     repositoryVerified,
+    repositorySource,
     agentText,
     agentStopReason,
   };
@@ -321,9 +333,9 @@ export default function Home() {
     }
     const directory = repositoryDirectory.trim();
     const url = repositoryUrl.trim();
-    if ((directory.length === 0) !== (url.length === 0)) {
+    if (directory.length > 0 && url.length === 0) {
       setError(
-        'Provide both a local repository directory and repository URL, or neither — a URL alone cannot be verified.',
+        'A local repository directory requires a repository URL. Provide a URL, with or without a local directory.',
       );
       return;
     }
@@ -439,7 +451,7 @@ export default function Home() {
                 htmlFor="repository-url"
                 className="block text-sm font-medium text-zinc-900 dark:text-zinc-100"
               >
-                Repository URL (metadata)
+                Repository URL
               </label>
               <input
                 id="repository-url"
@@ -450,7 +462,7 @@ export default function Home() {
                 className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-500"
               />
               <p className="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-                Recorded as metadata only — a URL alone cannot be verified.
+                Public GitHub repositories can be fetched and verified automatically. A local directory is optional for local development/testing.
               </p>
             </div>
 
@@ -571,11 +583,13 @@ export default function Home() {
               </div>
               <p className="mt-2 text-xs text-zinc-400 dark:text-zinc-500">
                 {loading
-                  ? 'Checking the local repository…'
+                  ? 'Checking the repository…'
                   : result !== null
                     ? result.repositoryVerified
-                      ? 'Local repository directory verified.'
-                      : 'No local directory supplied — URL metadata alone is not verified.'
+                      ? result.repositorySource === 'github'
+                        ? 'Public GitHub repository fetched and verified.'
+                        : 'Local repository directory verified.'
+                      : 'No repository supplied.'
                     : 'Waiting for a submission'}
               </p>
             </div>

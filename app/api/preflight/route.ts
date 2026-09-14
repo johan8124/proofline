@@ -4,7 +4,8 @@
  * POST /api/preflight (multipart/form-data)
  *   file: File (required manuscript PDF upload)
  *   repositoryDirectory?: string (optional local filesystem directory path)
- *   repositoryUrl?: string (optional repository URL metadata)
+ *   repositoryUrl?: string (optional repository URL; public GitHub repos are
+ *                          fetched to a temp directory and verified)
  * → { readiness, findings, evidenceLedger, pdfVerified, repositoryVerified,
  *     agentText, agentStopReason }
  *
@@ -19,7 +20,7 @@
 import { NextResponse } from 'next/server';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { GlobalWorkerOptions } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import {
@@ -31,6 +32,10 @@ import {
   runProoflineAgentWithFacts,
   runRequestScopedPreflightAgent,
 } from '../../../lib/agent/proofline-real-agent';
+import {
+  fetchPublicGitHubRepository,
+  isPublicGitHubRepoUrl,
+} from '../../../lib/repository/fetch-github-repository';
 
 /** This route must always run in the Node.js runtime where fs/os exist. */
 export const runtime = 'nodejs';
@@ -130,17 +135,34 @@ export async function POST(request: Request) {
     return badRequest('Field "file" must be a valid PDF (missing %PDF- header).');
   }
 
-  const repositoryDirectory = optionalTextField(formData.get('repositoryDirectory'));
+  let repositoryDirectory = optionalTextField(formData.get('repositoryDirectory'));
   const repositoryUrl = optionalTextField(formData.get('repositoryUrl'));
+
   if (repositoryDirectory !== undefined && repositoryUrl === undefined) {
     return badRequest(
       'Fields "repositoryDirectory" and "repositoryUrl" must be supplied together.',
     );
   }
+
+  // Public GitHub URL without a local directory: fetch to a temp directory.
+  let tempRepoDir: string | null = null;
   if (repositoryDirectory === undefined && repositoryUrl !== undefined) {
-    return badRequest(
-      'Field "repositoryUrl" alone cannot be verified; supply "repositoryDirectory" with it.',
-    );
+    if (!isPublicGitHubRepoUrl(repositoryUrl)) {
+      return badRequest(
+        'Field "repositoryUrl" must be a public GitHub repository URL (https://github.com/owner/repo).',
+      );
+    }
+    try {
+      tempRepoDir = await fetchPublicGitHubRepository(repositoryUrl);
+      repositoryDirectory = tempRepoDir;
+    } catch (error) {
+      // Safe error message; never leak stack traces or server paths.
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Failed to fetch the public GitHub repository.';
+      return badRequest(message);
+    }
   }
 
   let tempDir: string | null = null;
@@ -175,6 +197,16 @@ export async function POST(request: Request) {
         : {}),
     });
 
+    // Distinguish how the repository was verified: "github" when the user
+    // supplied only a public GitHub URL that was fetched to a temp directory,
+    // "local" when the user supplied their own local directory, "none" otherwise.
+    const repositorySource: 'github' | 'local' | 'none' =
+      tempRepoDir !== null
+        ? 'github'
+        : repositoryDirectory !== undefined
+          ? 'local'
+          : 'none';
+
     // 3. Explanation step: synthesize tool observations + authoritative deterministic result
     let agentText: string;
     let agentStopReason: string;
@@ -187,7 +219,7 @@ export async function POST(request: Request) {
       agentStopReason = 'agent_unavailable';
     } else {
       try {
-        const facts = preflightFactsFromResult(result);
+        const facts = preflightFactsFromResult(result, repositorySource);
         if (orchestrationText !== null) {
           facts.agentInspectionObservation = orchestrationText;
         }
@@ -236,6 +268,7 @@ export async function POST(request: Request) {
         evidenceLedger: { entries: publicEvidenceEntries },
         pdfVerified: result.pdfVerified,
         repositoryVerified: result.repositoryVerified,
+        repositorySource,
         agentText,
         agentStopReason,
       },
@@ -261,6 +294,16 @@ export async function POST(request: Request) {
     if (tempDir !== null) {
       try {
         await rm(tempDir, { recursive: true, force: true });
+      } catch {
+        // Ignore cleanup failures; the response status is already decided.
+      }
+    }
+    // Clean up the GitHub extraction temp directory (the extracted repo root
+    // is inside a proofline-repo-* temp dir; remove the parent to delete all).
+    if (tempRepoDir !== null) {
+      try {
+        const repoParentDir = dirname(tempRepoDir);
+        await rm(repoParentDir, { recursive: true, force: true });
       } catch {
         // Ignore cleanup failures; the response status is already decided.
       }
