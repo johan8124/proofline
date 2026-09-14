@@ -13,6 +13,7 @@
 import { useState } from 'react';
 import type { ChangeEvent, ReactNode } from 'react';
 import { AgentMarkdown } from './components/agent-markdown';
+import { ConstellationBackground } from './components/constellation-background';
 
 /** Readiness status returned by POST /api/preflight. */
 type ReadinessStatus = 'ready' | 'blocked' | 'human_review';
@@ -834,6 +835,192 @@ function EvidenceLedger({ result }: { result: PreflightResult }) {
 
 /* === pf-components-e === */
 
+/**
+ * Hero component — premium two-column layout.
+ * Left: headline and intro. Right: Submission Proof artifact.
+ */
+function Hero() {
+  return (
+    <section className="relative mx-auto w-full max-w-5xl mb-12 lg:mb-16">
+      <div className="grid gap-10 lg:grid-cols-2 lg:gap-16">
+        {/* LEFT: headline and intro */}
+        <div className="order-1 lg:order-1">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400 dark:text-zinc-500">
+            PROOFLINE · SUBMISSION PREFLIGHT
+          </p>
+          <h1 className="mt-4 text-4xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50 sm:text-5xl">
+            Prove your submission
+            <br />
+            <span className="text-zinc-700 dark:text-zinc-300">is ready.</span>
+          </h1>
+          <p className="mt-6 max-w-md text-base leading-7 text-zinc-600 dark:text-zinc-400">
+            Verify your paper, repository, and submission requirements with evidence,
+            not guesswork. Proofline checks a submission package against explicit
+            requirements and records every finding as evidence you can inspect.
+          </p>
+          <div className="mt-6 flex flex-wrap gap-6 text-sm">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 dark:text-zinc-400">
+                Deterministic
+              </p>
+              <p className="mt-1 text-zinc-600 dark:text-zinc-300">
+                Page counts, file presence, rule outcomes — never a model.
+              </p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-zinc-500 dark:text-zinc-400">
+                Evidence Ledger
+              </p>
+              <p className="mt-1 text-zinc-600 dark:text-zinc-300">
+                Every check becomes an inspectable record.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT: Submission Proof artifact */}
+        <div className="order-2 lg:order-2">
+          <SubmissionProofArtifact />
+        </div>
+      </div>
+    </section>
+  );
+/**
+ * Submission Proof artifact — a visual evidence document showing the
+ * proof pipeline: submission package → evidence chain → decision.
+ */
+function SubmissionProofArtifact() {
+  return (
+    <div
+      className="submission-proof-wrapper"
+      aria-hidden="false"
+      role="figure"
+      aria-label="Submission proof example showing the evidence chain from package to decision"
+    >
+      <div className="submission-proof-paper">
+        {/* Header */}
+        <div className="sp-header">
+          <div className="sp-header-left">
+            <span className="sp-badge">PROOF · REF PF-2026-001</span>
+            <span className="sp-header-right">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                aria-hidden="true"
+              >
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+              </svg>
+              <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400 ml-1.5">
+                2026-09-14
+              </span>
+            </span>
+          </div>
+          <span className="sp-status-label">
+            <span className="sp-status-dot" />
+            VERIFIED STATE
+          </span>
+        </div>
+
+        {/* Submission Package section */}
+        <div className="sp-section sp-section--package">
+          <div className="sp-section-label">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+            </svg>
+            SUBMISSION PACKAGE
+          </div>
+          <div className="sp-package-row">
+            <span className="sp-package-name">manuscript.pdf</span>
+            <span className="sp-verified-badge">VERIFIED</span>
+          </div>
+          <div className="sp-package-row">
+            <span className="sp-package-name">repository</span>
+            <span className="sp-verified-badge">VERIFIED</span>
+          </div>
+          <div className="sp-package-row">
+            <span className="sp-package-name">venue rules</span>
+            <span className="sp-checked-badge">CHECKED</span>
+          </div>
+        </div>
+
+        {/* Divider */}
+        <div className="sp-divider" />
+
+        {/* Evidence Chain section */}
+        <div className="sp-section sp-section--evidence">
+          <div className="sp-section-label">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <path d="M9 11l3 3L22 4" />
+              <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+            </svg>
+            EVIDENCE CHAIN
+          </div>
+          <div className="sp-chain-container">
+            <div className="sp-chain-step">
+              <div className="sp-chain-dot" />
+              <span className="sp-chain-label">Requirement</span>
+              <span className="sp-chain-detail">Page limit · file present · artifact required</span>
+            </div>
+            <div className="sp-chain-arrow">
+              <svg width="20" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                <path d="M5 12h14M13 5l7 7-7 7" />
+              </svg>
+            </div>
+            <div className="sp-chain-step">
+              <div className="sp-chain-dot" />
+              <span className="sp-chain-label">Repository Artifact</span>
+              <span className="sp-chain-detail">figures/results.pdf · README.md · LICENSE</span>
+            </div>
+            <div className="sp-chain-arrow">
+              <svg width="20" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                <path d="M5 12h14M13 5l7 7-7 7" />
+              </svg>
+            </div>
+            <div className="sp-chain-step">
+              <div className="sp-chain-dot" />
+              <span className="sp-chain-label">Evidence</span>
+              <span className="sp-chain-detail">recorded · timestamped · traceable</span>
+            </div>
+            <div className="sp-chain-arrow">
+              <svg width="20" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+                <path d="M5 12h14M13 5l7 7-7 7" />
+              </svg>
+            </div>
+            <div className="sp-chain-step sp-chain-step--decision">
+              <div className="sp-chain-dot sp-chain-dot--ready" />
+              <span className="sp-chain-label sp-chain-label--bold">Decision</span>
+              <span className="sp-chain-detail">READY · submission verified</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="sp-footer">
+          <div className="sp-footer-left">
+            <span className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400">
+              Evidence Ledger · 12 records
+            </span>
+          </div>
+          <div className="sp-footer-right">
+            <div className="sp-evidence-marker">
+              <span className="sp-evidence-dot" />
+              <span className="text-[10px] font-medium text-zinc-500 dark:text-zinc-400">
+                CLAIM → EVIDENCE → RULE → DECISION
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+}
+
 export default function Home() {
   const [selectedPdf, setSelectedPdf] = useState<File | null>(null);
   const [repositoryDirectory, setRepositoryDirectory] = useState('');
@@ -908,9 +1095,17 @@ export default function Home() {
   }
 
   return (
-    <div className="flex min-h-full flex-1 flex-col bg-zinc-50 font-sans text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
-      {/* 1. Header */}
-      <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+    <div className="proofline-page">
+      <ConstellationBackground />
+      {/*
+        Page wrapper — deliberately transparent in dark mode so the fixed
+        ConstellationBackground layer (z-index: -1) shows through. Light mode
+        stays opaque: the field is configured mode="dark", so a dark canvas
+        behind zinc-900 text would be unreadable.
+      */}
+      <div className="proofline-content flex min-h-full flex-1 flex-col bg-zinc-50 font-sans text-zinc-900 dark:bg-transparent dark:text-zinc-50">
+        {/* 1. Header */}
+        <header className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
         <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
           <Wordmark />
           <div className="flex items-center gap-2 text-xs font-medium text-zinc-600 dark:text-zinc-300">
@@ -923,21 +1118,9 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-10 sm:px-6 sm:py-14">
+      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-10 sm:px-6 sm:py-14 lg:pt-4">
         {/* 2. Hero */}
-        <section className="max-w-2xl">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500 dark:text-zinc-400">
-            Proofline · Submission preflight
-          </p>
-          <h1 className="mt-3 text-3xl font-semibold tracking-tight text-zinc-900 sm:text-4xl dark:text-zinc-50">
-            Prove your submission is ready.
-          </h1>
-          <p className="mt-4 text-base leading-7 text-zinc-600 dark:text-zinc-400">
-            Verify your paper, repository, and submission requirements with evidence,
-            not guesswork. Proofline checks a submission package against explicit
-            requirements and records every finding as evidence you can inspect.
-          </p>
-        </section>
+        <Hero />
 
         {/* 3. Submission setup */}
         <Card title="Submission setup">
@@ -1120,5 +1303,6 @@ export default function Home() {
         Proofline · Submission preflight · Deterministic verification
       </footer>
     </div>
-  );
+  </div>
+);
 }

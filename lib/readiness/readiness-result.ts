@@ -163,7 +163,7 @@ export function buildReadinessResult(
 
   return {
     status,
-    findings,
+    findings: deduplicatedFindings,
     blockingCount,
     humanReviewCount,
     passedCount,
