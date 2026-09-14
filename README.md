@@ -24,7 +24,7 @@ User
 → POST /api/preflight
 → request-scoped Strands agent
    → inspect_manuscript
-   → inspect_repository when applicable
+   → inspect_repository when a repository is supplied (local directory or fetched GitHub URL)
    → tool observations
 → deterministic runPreflight
 → Evidence Ledger + ReadinessResult
@@ -45,15 +45,15 @@ What Proofline does today:
 - **PDF upload** — the browser sends the manuscript as multipart form data to the API.
 - **PDF page-count verification** — page count is inspected server-side with `pdfjs-dist` (content is validated by `%PDF-` magic bytes, not by filename).
 - **8-page Example Conference page-limit rule** — `page_limit_max_8` from the example venue rule pack.
-- **Local repository inspection** — a server-local directory is inspected to build a repository snapshot.
-- **Repository file checks** — `repository_accessible`, `required_repository_file_readme` (`README.md`), `required_repository_file_license` (`LICENSE`), and `required_repository_file_supplementary` (`figures/results.pdf`).
+- **Repository inspection** — either a server-local directory is inspected directly, or a public GitHub repository URL is fetched (tarball downloaded and extracted to a server temporary directory) to build a repository snapshot.
+- **Repository rule set** — `repository_accessible`, `required_repository_file_readme` (`README.md`), `required_repository_file_license` (`LICENSE`), `required_repository_file_supplementary` (`figures/results.pdf`), and the `supplementary_results_artifact` cross-artifact rule linking the manuscript-side `required_file_supplementary` requirement to the repository's `figures/results.pdf`.
 - **Evidence Ledger** — one immutable ledger per preflight run, with one entry per check.
 - **READY / BLOCKED / HUMAN REVIEW states** — derived deterministically from the findings.
 - **Two-stage Strands Agents SDK architecture** — a request-scoped orchestration agent calls `inspect_manuscript` and (when applicable) `inspect_repository`, then a facts-only explanation agent with no verification tools generates the human-readable summary.
 - **Groq OpenAI-compatible endpoint** — the Strands `OpenAIModel` points at `https://api.groq.com/openai/v1` (model `openai/gpt-oss-120b`); no separate Groq client is created.
 - **API validation and temporary PDF cleanup** — malformed requests return structured 400 errors; the uploaded PDF is written to a temporary directory, verified, and deleted in a `finally` block.
 
-What Proofline deliberately does **not** do today: GitHub API integration, Amazon Bedrock AgentCore, a database, authentication, background monitoring, automatic conference submission, or real multi-venue rule integrations.
+What Proofline deliberately does **not** do today: Amazon Bedrock AgentCore, a database, authentication, background monitoring, automatic conference submission, or real multi-venue rule integrations.
 
 ## Readiness states
 
@@ -80,7 +80,7 @@ Proofline uses two distinct Strands agent stages, both backed by the `@strands-a
 ### Stage 2: Facts-only explanation agent
 
 - Constructed with **no verification tools registered** (`tools: []`), so it cannot re-verify anything or fabricate tool results.
-- Receives the authoritative deterministic facts — readiness state, counts, findings, evidence ledger, `pdfVerified`/`repositoryVerified` flags — plus the sanitized orchestration observations, serialized as its prompt. Only these facts are sent; the manuscript PDF bytes are **not** sent to Groq.
+- Receives the authoritative deterministic facts — readiness state, counts, findings, evidence ledger, `pdfVerified`/`repositoryVerified` flags, and the repository source (`github` / `local` / `none`) — plus the sanitized orchestration observations, serialized as its prompt. Only these facts are sent; the manuscript PDF bytes are **not** sent to Groq.
 - It **cannot change the deterministic result**: the API returns the deterministic payload regardless of agent output, and agent failure degrades to an explicit `agent_unavailable` message.
 
 ### Security behavior
@@ -102,7 +102,7 @@ The following scenarios were verified against the running `POST /api/preflight` 
 4. **Request-scoped Strands tool invocation** — `inspect_manuscript` is actually called by the orchestration agent.
 5. **No server filesystem path in captured tool observations** — tool results never contain server-local paths.
 6. **Public API `sourceRef`** — manuscript `sourceRef` uses `manuscript.pdf` instead of the temporary server path.
-7. **Repository fixtures** — complete and incomplete repository fixtures exist and represent the documented repository checks.
+7. **Repository fixtures** — complete and incomplete repository fixtures exist and represent the documented repository checks, including the `supplementary_results_artifact` cross-artifact rule.
 
 Permanent fixtures in the repository:
 
@@ -157,25 +157,24 @@ Then open [http://localhost:3000](http://localhost:3000) in your browser.
 | Field | Required | Description |
 | --- | --- | --- |
 | `file` | Yes | The manuscript PDF. Validated by `%PDF-` magic bytes; a `.pdf` filename and non-empty body are also required. |
-| `repositoryDirectory` | Optional | Server-local directory path of the repository to inspect. |
-| `repositoryUrl` | Optional | Repository URL, recorded as metadata only. |
+| `repositoryDirectory` | Optional | Server-local directory path of the repository to inspect (requires `repositoryUrl` alongside it). |
+| `repositoryUrl` | Optional | Repository URL. With `repositoryDirectory`: recorded as repository metadata. Supplied alone: must be a public GitHub URL (`https://github.com/owner/repo`), which is fetched and verified automatically. |
 
-`repositoryDirectory` and `repositoryUrl` must be supplied together; a URL alone is rejected, because **repository verification currently requires a local directory** — the URL is never fetched.
+`repositoryDirectory` and `repositoryUrl` supplied together verify a **server-local directory**. Supplying only `repositoryUrl` is accepted for **public GitHub repository URLs**; the repository is fetched and extracted to a server temporary directory, then verified like a local directory. Any other URL supplied alone — a private repository, a non-GitHub host, or a malformed URL — is rejected with a 400.
 
-On success the API returns HTTP 200 with JSON containing the `readiness` result, the `findings` array, the `evidenceLedger`, `pdfVerified`/`repositoryVerified` flags, and the `agentText`/`agentStopReason` explanation fields. Invalid input returns HTTP 400 with a concise `error` message; unexpected server failures return a generic HTTP 500 that never leaks stack traces, environment variables, or server filesystem paths. The temporary copy of the uploaded PDF is always deleted afterward.
+On success the API returns HTTP 200 with JSON containing the `readiness` result, the `findings` array, the `evidenceLedger`, `pdfVerified`/`repositoryVerified` flags, the `repositorySource` field (`'github'` | `'local'` | `'none'`), and the `agentText`/`agentStopReason` explanation fields. Invalid input returns HTTP 400 with a concise `error` message; unexpected server failures return a generic HTTP 500 that never leaks stack traces, environment variables, or server filesystem paths. The temporary copy of the uploaded PDF is always deleted afterward.
 
 ## Repository fixtures
 
-- **`test-fixtures/repositories/complete-repository/`** — satisfies every example repository rule: it is an inspectable local directory containing `README.md`, `LICENSE`, and `figures/results.pdf`, so all four checks (`repository_accessible`, `required_repository_file_readme`, `required_repository_file_license`, `required_repository_file_supplementary`) pass.
-- **`test-fixtures/repositories/incomplete-repository/`** — contains `README.md` and `LICENSE` but is missing `figures/results.pdf`, so `required_repository_file_supplementary` fails and the preflight is BLOCKED.
+- **`test-fixtures/repositories/complete-repository/`** — satisfies every example repository rule: it is an inspectable local directory containing `README.md`, `LICENSE`, and `figures/results.pdf`, so all five checks (`repository_accessible`, `required_repository_file_readme`, `required_repository_file_license`, `required_repository_file_supplementary`, and the `supplementary_results_artifact_figures_results` cross-artifact rule) pass.
+- **`test-fixtures/repositories/incomplete-repository/`** — contains `README.md` and `LICENSE` but is missing `figures/results.pdf`, so `required_repository_file_supplementary` and the `supplementary_results_artifact_figures_results` cross-artifact rule fail and the preflight is BLOCKED.
 
-Pass the fixture's absolute path as `repositoryDirectory` (together with a `repositoryUrl`) when running a preflight with a repository.
+Pass the fixture's absolute path as `repositoryDirectory` (together with a `repositoryUrl`) when running a preflight with a repository. Supplying only a public GitHub repository URL runs the same rule set against the fetched repository.
 
 ## Limitations
 
-- **Repository verification is local-directory based.** Only directories on the server's filesystem can be verified; a repository URL is metadata and is never fetched.
+- **Repository verification is local-directory or public-GitHub based.** A server-local directory is inspected directly. A repository URL alone is verified only when it is a public GitHub repository URL: Proofline fetches the tarball, extracts it into a server temporary directory (deleted after the request), and verifies it like a local directory. Private repositories, GitHub Enterprise, and non-GitHub hosts (for example GitLab or Bitbucket) are not fetched — a local directory is still required for those.
 - **Example Conference is an example rule pack.** The 8-page limit and the required-file rules are illustrative, not a real venue's official requirements.
-- **No GitHub fetching.** There is no GitHub API integration of any kind.
 - **No persistent database.** All results are returned per request; nothing is stored between runs.
 - **No automatic submission.** Proofline does not submit anything to a venue on your behalf.
 - The PDF is written to a temporary file on the server during verification, which ties the API to the Node.js runtime with filesystem access.

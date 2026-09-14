@@ -137,7 +137,7 @@ export async function verifyLocalRepositoryWithEvidence(
   const validation = validateRepositoryRule(rule, repositorySnapshot);
 
   const fileAvailability =
-    rule.type === 'required_repository_file'
+    rule.type === 'required_repository_file' || rule.type === 'supplementary_results_artifact'
       ? repositorySnapshot.files.find((entry) => entry.path === rule.expected.path)?.availability
       : undefined;
   const confidenceLevel = confidenceLevelFor(

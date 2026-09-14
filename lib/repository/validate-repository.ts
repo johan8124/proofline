@@ -21,6 +21,11 @@
  *     matching file availability 'missing' → fail
  *     matching file availability 'unknown' → unsupported
  *     no matching file entry at all        → fail
+ *   supplementary_results_artifact (cross-artifact: connects the manuscript
+ *     supplementary-results requirement to a repository results artifact) uses
+ *     the SAME required-file presence semantics as required_repository_file;
+ *     its linkedSubmissionRuleId is descriptive metadata recording the
+ *     manuscript-side rule it satisfies and is never used to infer facts.
  */
 
 import {
@@ -33,7 +38,10 @@ import {
 } from './repository-snapshot';
 
 /** Deterministic repository check categories supported by Proofline. */
-export type RepositoryRuleType = 'repository_accessible' | 'required_repository_file';
+export type RepositoryRuleType =
+  | 'repository_accessible'
+  | 'required_repository_file'
+  | 'supplementary_results_artifact';
 
 /** Validation outcome for a single repository rule against a snapshot. */
 export type RepositoryValidationStatus = 'pass' | 'fail' | 'unsupported';
@@ -68,12 +76,33 @@ export interface RequiredRepositoryFileRule extends RepositoryRuleBase {
 }
 
 /**
+ * Cross-artifact rule connecting the manuscript-side supplementary-results
+ * requirement to a concrete repository results artifact. The artifact
+ * presence check is identical to `required_repository_file`; the linked
+ * manuscript rule id is descriptive metadata that records the cross-artifact
+ * relationship in the evidence (never used to infer facts).
+ */
+export interface SupplementaryResultsArtifactRule extends RepositoryRuleBase {
+  type: 'supplementary_results_artifact';
+  /** Repository-relative expected results-artifact path (e.g. 'figures/results.pdf'). */
+  expected: RequiredRepositoryFileExpectedValue;
+  /**
+   * Manuscript-side venue rule this repository artifact satisfies
+   * (e.g. 'required_file_supplementary' from lib/rules/venue-rules.ts).
+   */
+  linkedSubmissionRuleId: string;
+  /** Human-readable description of the linked manuscript-side requirement. */
+  linkedSubmissionRequirement: string;
+}
+
+/**
  * A repository rule. A discriminated union so each rule type carries exactly
  * the expected value it needs; new check categories extend this union.
  */
 export type RepositoryRule =
   | RepositoryAccessibleRule
-  | RequiredRepositoryFileRule;
+  | RequiredRepositoryFileRule
+  | SupplementaryResultsArtifactRule;
 
 /** Machine-readable reason codes explaining a repository validation outcome. */
 export type RepositoryRuleReasonCode =
@@ -109,7 +138,7 @@ function findFileByPath(
 }
 /** Maps a reported file availability to the matching validation outcome. */
 function validateRequiredRepositoryFile(
-  rule: RequiredRepositoryFileRule,
+  rule: RequiredRepositoryFileRule | SupplementaryResultsArtifactRule,
   snapshot: RepositorySnapshot,
 ): RepositoryRuleValidationResult {
   const file = findFileByPath(snapshot, rule.expected.path);
@@ -177,6 +206,8 @@ export function validateRepositoryRule(
     }
     case 'required_repository_file':
       return validateRequiredRepositoryFile(rule, snapshot);
+    case 'supplementary_results_artifact':
+      return validateRequiredRepositoryFile(rule, snapshot);
   }
 }
 
@@ -231,12 +262,34 @@ export const EXAMPLE_REQUIRED_SUPPLEMENTARY_ARTIFACT_RULE: RequiredRepositoryFil
   expected: { path: 'figures/results.pdf', category: 'artifact' },
 };
 
+/**
+ * Example rule 5 (cross-artifact): connects the manuscript-side
+ * 'required_file_supplementary' venue rule (lib/rules/venue-rules.ts) to a
+ * concrete repository results artifact. The presence check is identical to
+ * `required_repository_file`; `linkedSubmissionRuleId` /
+ * `linkedSubmissionRequirement` are descriptive metadata recording the
+ * cross-artifact relationship in the evidence and are never used to infer
+ * facts.
+ */
+export const EXAMPLE_SUPPLEMENTARY_RESULTS_ARTIFACT_RULE: SupplementaryResultsArtifactRule = {
+  id: 'supplementary_results_artifact_figures_results',
+  name: 'Supplementary results artifact (cross-artifact)',
+  description:
+    "The repository must include the results artifact 'figures/results.pdf', " +
+    'which satisfies the manuscript-side required_file_supplementary requirement.',
+  type: 'supplementary_results_artifact',
+  expected: { path: 'figures/results.pdf', category: 'artifact' },
+  linkedSubmissionRuleId: 'required_file_supplementary',
+  linkedSubmissionRequirement: 'The submission must include supplementary.pdf.',
+};
+
 /** The complete example repository rule set. */
 export const EXAMPLE_REPOSITORY_RULES: readonly RepositoryRule[] = [
   EXAMPLE_REPOSITORY_ACCESSIBLE_RULE,
   EXAMPLE_REQUIRED_README_RULE,
   EXAMPLE_REQUIRED_LICENSE_RULE,
   EXAMPLE_REQUIRED_SUPPLEMENTARY_ARTIFACT_RULE,
+  EXAMPLE_SUPPLEMENTARY_RESULTS_ARTIFACT_RULE,
 ];
 
 /**

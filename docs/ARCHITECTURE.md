@@ -13,8 +13,14 @@ flowchart TD
     U[User] --> UI[Next.js UI]
     UI --> API[POST /api/preflight]
     API --> TMP[Temporary server-side PDF]
+    API --> URL[repositoryUrl: public GitHub URL]
+    API --> LOCAL[Server-local repository directory]
+    URL --> FETCH[Public GitHub fetch + extract to temp dir]
+    FETCH --> REPO_SRC[Repository directory inspected]
+    LOCAL --> REPO_SRC
 
     TMP --> AGENT[Request-scoped Strands Agent]
+    REPO_SRC --> AGENT
     AGENT --> IM[inspect_manuscript]
     AGENT --> IR[inspect_repository when repository supplied]
     IM --> OBS[Tool observations]
@@ -24,6 +30,7 @@ flowchart TD
 
     PF --> PDF[Deterministic PDF Verification]
     PF --> REPO[Deterministic Repository Verification]
+    REPO_SRC --> REPO
 
     PDF --> LEDGER[Evidence Ledger]
     REPO --> LEDGER
@@ -51,6 +58,15 @@ flowchart TD
 - Both tools are **zero-argument** from the model's perspective — the PDF path and repository directory are bound in the closure, never exposed as free-form parameters.
 - The agent's system prompt forbids inventing verification facts, evidence, or rule identities.
 - Its output is a convenience observation trace (`agentInspectionObservation`) passed to the explanation step; it has **no authority** over the readiness result.
+- The `inspect_repository` observation exposes the **cross-artifact relationship** to the orchestration agent: its `supplementary_results_artifact` check carries `linkedSubmissionRuleId` (`required_file_supplementary`) and `linkedSubmissionRequirement`, so the agent can see that the repository's `figures/results.pdf` satisfies a manuscript-side requirement.
+
+## Repository verification
+
+- A repository snapshot is built from a **server-local directory** (`inspectLocalRepository`) or from a **public GitHub repository URL**. When `repositoryUrl` is supplied without a local directory, the API validates it against `https://github.com/owner/repo`, resolves the default branch via the public GitHub API, downloads the repository tarball with redirect/host allowlist, size and timeout limits, extracts it into a server temporary directory (path-traversal guarded), and verifies it exactly like a local directory. The temporary directory is deleted after the request. **Local repository directories remain fully supported** and keep their existing semantics: `repositoryDirectory` + `repositoryUrl` supplied together verify the server-local path directly.
+- The example repository rule set (`EXAMPLE_REPOSITORY_RULES`, applied once per supplied repository) contains **five rules**: `repository_accessible`, `required_repository_file_readme` (`README.md`), `required_repository_file_license` (`LICENSE`), `required_repository_file_supplementary` (`figures/results.pdf`), and `supplementary_results_artifact_figures_results`.
+- `supplementary_results_artifact_figures_results` is the **cross-artifact rule**: it evaluates the repository path `figures/results.pdf` with the same required-file presence semantics as `required_repository_file`, and its `linkedSubmissionRuleId` / `linkedSubmissionRequirement` metadata name the manuscript-side venue rule it satisfies (`required_file_supplementary` — "The submission must include supplementary.pdf."). That metadata is descriptive: it records the relationship and is never used to infer facts.
+- The **Evidence Ledger records the relationship**. The cross-artifact evidence entry uses `supplementary_results_artifact_figures_results` as its `ruleId`, reports the observed artifact availability (`present` / `missing` / `unknown`), and its `details` name the linked manuscript-side rule, so the ledger remains traceable without ever deciding rule semantics.
+- Every repository check — local or fetched — flows through the same deterministic pipeline (`inspectLocalRepository` → `validateRepositoryRule` → `createEvidenceEntry` → `addEvidenceEntry`), so the added cross-artifact rule does not weaken the deterministic authority described below.
 
 ## Deterministic authority
 

@@ -23,11 +23,10 @@ import type {
   ReadinessResult,
 } from '../readiness/readiness-result';
 import { EXAMPLE_PAGE_LIMIT_RULE } from '../rules/venue-rules';
-import { EXAMPLE_REPOSITORY_RULES } from '../repository/validate-repository';
 import { verifyPdfPageLimitWithEvidence } from '../verification/verify-pdf-with-evidence';
-import { verifyLocalRepositoryWithEvidence } from '../repository/verify-local-repository-with-evidence';
 import { verifyPdfPageLimitTool } from './proofline-verification-tools';
 import { verifyLocalRepositoryTool } from './proofline-repository-tools';
+import { inspectRepositoryObservation } from './inspect-repository-observation';
 
 /** Verified Groq model id for the real agent. */
 const GROQ_MODEL_ID = 'openai/gpt-oss-120b';
@@ -180,73 +179,12 @@ export function createRequestScopedVerificationTools(
       inputSchema: { type: 'object', properties: {} },
       callback: async (): Promise<JSONValue> => {
         toolsCalled.push('inspect_repository');
-        const timestamp = new Date().toISOString();
-        const runId = Date.now().toString(36);
-        let sequence = 0;
-
-        const checks: Array<{
-          ruleId: string;
-          ruleType: string;
-          validationStatus: string;
-          validationReason: string;
-          evidenceStatus: string;
-          recommendedAction: string;
-          requiredPath?: string;
-          fileAvailability?: string | null;
-        }> = [];
-
-        let accessibility: string = 'unknown';
-        let fileCount = 0;
-
-        for (const rule of EXAMPLE_REPOSITORY_RULES) {
-          sequence += 1;
-          const evidenceId = `ev-agent-repo-${runId}-${sequence}-${rule.id}`;
-          const result = await verifyLocalRepositoryWithEvidence(
-            createEmptyLedger(),
-            repositoryDirectory,
-            repositoryUrl,
-            rule,
-            evidenceId,
-            timestamp,
-          );
-
-          accessibility = result.repositorySnapshot.accessibility;
-          fileCount = result.repositorySnapshot.files.length;
-          const requiredPath =
-            rule.type === 'required_repository_file'
-              ? rule.expected.path
-              : undefined;
-          const matchingFile = requiredPath
-            ? result.repositorySnapshot.files.find((f) => f.path === requiredPath)
-            : undefined;
-
-          checks.push({
-            ruleId: result.validation.ruleId,
-            ruleType: result.validation.ruleType,
-            validationStatus: result.validation.status,
-            validationReason: result.validation.reason,
-            evidenceStatus: result.evidence.status,
-            recommendedAction: result.evidence.recommendedAction,
-            ...(requiredPath
-              ? {
-                  requiredPath,
-                  fileAvailability: matchingFile
-                    ? matchingFile.availability
-                    : 'missing',
-                }
-              : {}),
-          });
-        }
-
-        const toolResult = {
+        const observation = await inspectRepositoryObservation({
+          repositoryDirectory,
           repositoryUrl,
-          accessibility,
-          fileCount,
-          checks,
-        };
-
-        input.onToolCall?.('inspect_repository', toolResult);
-        return toolResult as unknown as JSONValue;
+        });
+        input.onToolCall?.('inspect_repository', observation);
+        return observation as unknown as JSONValue;
       },
     });
 
